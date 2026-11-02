@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --ink: #f7f3e8;
+  --muted: #aaa99d;
+  --gold: #e5ae38;
+  --gold-bright: #f2bf4b;
+  --surface: #171a16;
+  --surface-raised: #20231e;
+  --line: rgba(235, 222, 187, 0.13);
+  --forest: #101711;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--forest);
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(ellipse at 50% -18%, rgba(119, 108, 48, 0.22), transparent 58%),
+    linear-gradient(160deg, #111712 0%, #171a16 52%, #111511 100%);
+  color: var(--ink);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+button,
+a,
+input,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 3px;
+}
+
+::selection {
+  color: #14140f;
+  background: var(--gold-bright);
+}
