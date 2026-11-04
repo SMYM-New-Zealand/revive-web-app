@@ -1,43 +1,10 @@
 "use server";
 
-import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { dateInTimeZone, isAvailableOnDate } from "@/lib/dates";
 import { requireParticipant } from "@/lib/auth";
-import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
-
-export async function signInWithGoogle(formData: FormData) {
-  void formData;
-  if (!hasSupabaseConfig()) redirect("/?error=configuration");
-
-  const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
-  const protocol =
-    requestHeaders.get("x-forwarded-proto") ??
-    (host?.includes("localhost") ? "http" : "https");
-  const origin =
-    requestHeaders.get("origin") ??
-    (host ? `${protocol}://${host}` : "http://localhost:3000");
-
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      redirectTo: `${origin}/auth/callback?next=/log`,
-      queryParams: { prompt: "select_account" },
-    },
-  });
-  if (error) {
-    console.error("Google OAuth could not be started:", error.message);
-    redirect("/?error=oauth");
-  }
-  if (!data.url) {
-    throw new Error("Google OAuth did not return a sign-in URL.");
-  }
-  redirect(data.url);
-}
 
 export async function signOut() {
   const supabase = await createClient();

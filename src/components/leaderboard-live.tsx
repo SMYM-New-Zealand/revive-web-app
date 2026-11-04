@@ -33,7 +33,7 @@ export function LeaderboardLive({
     updateTime();
     const supabase = createClient();
     const channel = supabase
-      .channel("leaderboard", { config: { private: true } })
+      .channel("leaderboard")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "completions" },

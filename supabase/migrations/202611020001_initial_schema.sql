@@ -347,7 +347,7 @@ begin
     jsonb_build_object('competition_day', new.competition_day),
     'completion_changed',
     'leaderboard',
-    true
+    false
   );
   return new;
 end;
@@ -357,8 +357,4 @@ create trigger broadcast_completion_for_leaderboard
 after insert on public.completions
 for each row execute function public.broadcast_leaderboard_completion();
 
-alter table realtime.messages enable row level security;
-create policy "Allowed participants receive leaderboard refreshes"
-on realtime.messages for select to authenticated
-using (topic = 'leaderboard' and public.is_allowed_user());
 revoke all on function public.broadcast_leaderboard_completion() from public, anon, authenticated;

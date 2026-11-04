@@ -44,17 +44,30 @@ once per competition day, and follow a live leaderboard.
      add `http://localhost:3000/auth/callback` and your deployed
      `https://<your-domain>/auth/callback` as redirect URLs.
 
-4. Apply the database migration. With the Supabase CLI installed, link this
-   folder to the project and push the migrations:
+4. Apply the database migration to your hosted Supabase project. With the
+   Supabase CLI installed, link this folder to the project and push the
+   migrations:
 
    ```sh
    supabase login
    supabase link --project-ref <your-project-ref>
-   supabase db push
+   supabase db push --remote
    ```
 
    The migration creates the schema, RLS policies, completion validation,
-   leaderboard functions, and the private Realtime notification channel.
+   leaderboard functions, and a Realtime broadcast channel that only sends a
+   generic leaderboard-refresh notification. `supabase start` is only needed
+   when you want to run the database locally; it is not required for a linked
+   hosted project. The current Supabase CLI targets the local database by
+   default, so keep `--remote` on this command even after linking the project.
+
+   For local development, start the local Supabase services and apply the
+   migrations to the local database with:
+
+   ```sh
+   supabase start
+   supabase db reset
+   ```
 
 5. Add the first administrator in the Supabase SQL Editor (replace the address
    with the admin’s Google account). This is required before anyone can sign in:
@@ -91,7 +104,7 @@ Deploy to Vercel by importing the Git repository, adding
 `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` as environment
 variables, and deploying. Add the production callback URL to the Supabase Auth
 redirect allowlist and the deployed origin to Google OAuth’s authorized
-JavaScript origins. Apply any new migrations with `supabase db push`.
+JavaScript origins. Apply any new migrations with `supabase db push --remote`.
 
 ## Data and access rules
 
@@ -104,7 +117,8 @@ JavaScript origins. Apply any new migrations with `supabase db push`.
   being recorded twice for one user on one competition day, including concurrent
   requests.
 - Users can read the leaderboard and profiles, but completion rows are readable
-  only by their owners. A private Realtime broadcast emits only a refresh
+  only by their owners. A public Realtime broadcast emits only a generic refresh
   notification after an insert; the leaderboard then reloads through its
-  protected database function.
+  protected database function. The broadcast contains no participant or points
+  data.
 - Admin writes are protected by both application checks and RLS.

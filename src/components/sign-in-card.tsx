@@ -1,14 +1,48 @@
 "use client";
 
 import { useState } from "react";
-import { signInWithGoogle } from "@/app/actions";
+import { createClient } from "@/lib/supabase/client";
 
 export function SignInCard({
   configurationMissing = false,
+  signInError = "",
 }: {
   configurationMissing?: boolean;
+  signInError?: string;
 }) {
   const [pending, setPending] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(signInError);
+
+  async function handleSignIn() {
+    if (pending) return;
+    setPending(true);
+    setErrorMessage("");
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback?next=/log`,
+          queryParams: { prompt: "select_account" },
+        },
+      });
+
+      if (error) {
+        setErrorMessage("Couldn’t connect to Google. Please try again.");
+        setPending(false);
+        return;
+      }
+      if (!data.url) {
+        throw new Error("Google OAuth did not return a sign-in URL.");
+      }
+      window.location.assign(data.url);
+    } catch (error) {
+      console.error("Google OAuth could not be started:", error);
+      setErrorMessage("Couldn’t connect to Google. Check your connection and try again.");
+      setPending(false);
+    }
+  }
 
   return (
     <section className="w-full max-w-md rounded-3xl border border-white/10 bg-[#1d211c]/95 p-8 shadow-2xl shadow-black/40 sm:p-10">
@@ -34,10 +68,19 @@ export function SignInCard({
           the development server.
         </div>
       ) : (
-        <form action={signInWithGoogle} className="mt-8">
+        <div className="mt-8">
+          {errorMessage && (
+            <p
+              role="alert"
+              className="mb-4 rounded-xl border border-rose-300/20 bg-rose-300/[0.07] px-4 py-3 text-sm text-rose-100"
+            >
+              {errorMessage}
+            </p>
+          )}
           <button
+            type="button"
             disabled={pending}
-            onClick={() => setPending(true)}
+            onClick={() => void handleSignIn()}
             className="flex w-full items-center justify-center gap-3 rounded-full bg-[#f6f1e6] px-5 py-3.5 text-sm font-bold text-[#1b1b18] transition hover:bg-white disabled:opacity-70"
           >
             <GoogleMark />
@@ -46,7 +89,7 @@ export function SignInCard({
           <p className="mt-4 text-center text-xs leading-5 text-white/40">
             Google sign-in only. Access is limited to invited participants.
           </p>
-        </form>
+        </div>
       )}
       <div className="mt-9 border-t border-white/10 pt-5 text-center text-[11px] font-medium uppercase tracking-[0.24em] text-white/30">
         Hebrews 12:1–2
