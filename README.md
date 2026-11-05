@@ -62,9 +62,11 @@ once per competition day, and follow a live leaderboard.
    default, so keep `--remote` on this command even after linking the project.
 
    For local development, start the local Supabase services and apply the
-   migrations to the local database with:
+   migrations to the local database with (run `supabase init` once first; this
+   repository does not include local Supabase service configuration):
 
    ```sh
+   supabase init
    supabase start
    supabase db reset
    ```
@@ -94,7 +96,7 @@ once per competition day, and follow a live leaderboard.
 
 ## Tests and deployment
 
-Run the points and daily-locking unit tests with:
+Run the points, competition-calendar, and weekly-locking unit tests with:
 
 ```sh
 npm test
@@ -112,10 +114,16 @@ JavaScript origins. Apply any new migrations with `supabase db push --remote`.
 - A database trigger creates a profile only for an allowlisted Google email.
   Users who are not allowlisted are sent to the Access not granted page.
 - Completion inserts are restricted to the signed-in user and checked against
-  the configured competition timezone, competition dates, and challenge
-  availability. A unique database constraint prevents the same challenge from
+  the configured competition timezone, using competition days that run 4:00am
+  to 4:00am. A unique database constraint prevents the same challenge from
   being recorded twice for one user on one competition day, including concurrent
-  requests.
+  requests. Challenges marked “once per week” are limited to one completion in
+  each seven-day period starting from the competition start date.
+- Admins can add past-day completions for a selected participant. A backfill is
+  atomic: if any selected challenge violates its daily or weekly completion
+  limit, none of the selected completions are added.
+- Admins can configure whether each challenge is limited to once per
+  competition week when creating or managing a challenge.
 - Users can read the leaderboard and profiles, but completion rows are readable
   only by their owners. A public Realtime broadcast emits only a generic refresh
   notification after an insert; the leaderboard then reloads through its

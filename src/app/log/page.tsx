@@ -1,8 +1,17 @@
 import { AppShell } from "@/components/app-shell";
 import { ChallengeLog } from "@/components/challenge-log";
-import { dateInTimeZone, formatCompetitionDate, isAvailableOnDate } from "@/lib/dates";
+import {
+  competitionWeekStart,
+  dateInTimeZone,
+  formatCompetitionDate,
+  isAvailableOnDate,
+} from "@/lib/dates";
 import { requireParticipant } from "@/lib/auth";
-import { calculatePointsForDay, calculateTotalPoints } from "@/lib/points";
+import {
+  calculatePointsForDay,
+  calculateTotalPoints,
+  getChallengeIdsCompletedInCompetitionWeek,
+} from "@/lib/points";
 
 export default async function LogPage() {
   const { supabase, user, profile, config, isAdmin } = await requireParticipant();
@@ -29,6 +38,18 @@ export default async function LogPage() {
   const completedToday = myCompletions.filter(
     (completion) => completion.competition_day === today,
   );
+  const weeklyChallengeIds = new Set(
+    (allChallenges ?? [])
+      .filter((challenge) => challenge.once_per_week)
+      .map((challenge) => challenge.id),
+  );
+  const weeklyCompletedIds = getChallengeIdsCompletedInCompetitionWeek(
+    myCompletions,
+    competitionWeekStart(
+      today < config.starts_on ? config.starts_on : today,
+      config.starts_on,
+    ),
+  ).filter((challengeId) => weeklyChallengeIds.has(challengeId));
 
   return (
     <AppShell active="log" displayName={profile.display_name} isAdmin={isAdmin}>
@@ -40,6 +61,7 @@ export default async function LogPage() {
         <ChallengeLog
           challenges={challenges}
           initialCompletedIds={completedToday.map((completion) => completion.challenge_id)}
+          initialWeeklyCompletedIds={weeklyCompletedIds}
           todayPoints={calculatePointsForDay(myCompletions, today)}
           totalPoints={calculateTotalPoints(myCompletions)}
           dateLabel={formatCompetitionDate(today)}

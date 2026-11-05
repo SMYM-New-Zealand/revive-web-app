@@ -61,7 +61,7 @@ export async function completeChallenge(
     if (error.code === "23505") {
       return {
         ok: false,
-        error: "Already recorded today — this challenge is locked until tomorrow.",
+        error: "This challenge is already recorded today or has reached its weekly limit.",
       };
     }
     if (error.code === "23514") {
@@ -83,6 +83,88 @@ export type AdminActionState = {
   message: string;
   success: boolean;
 };
+
+export async function backfillCompletions(
+  _previousState: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const { supabase, config } = await requireAdmin();
+  const participantId = String(formData.get("user_id") ?? "");
+  const competitionDay = String(formData.get("competition_day") ?? "");
+  const challengeIds = formData
+    .getAll("challenge_ids")
+    .map(String)
+    .filter(Boolean);
+
+  if (!participantId || !isDate(competitionDay) || challengeIds.length === 0) {
+    return {
+      message: "Choose a participant, past competition date, and at least one challenge.",
+      success: false,
+    };
+  }
+
+  const today = dateInTimeZone(new Date(), config.timezone);
+  if (
+    competitionDay < config.starts_on ||
+    competitionDay > config.ends_on ||
+    competitionDay >= today
+  ) {
+    return {
+      message: "Choose a past competition day within the competition dates.",
+      success: false,
+    };
+  }
+
+  const { data: insertedCount, error } = await supabase.rpc("admin_backfill_completions", {
+    p_user_id: participantId,
+    p_competition_day: competitionDay,
+    p_challenge_ids: challengeIds,
+  });
+
+  if (error) {
+    if (error.code === "23505") {
+      return {
+        message:
+          "At least one challenge is already logged for that day or competition week. No entries were added.",
+        success: false,
+      };
+    }
+    if (error.code === "23514" || error.code === "22023") {
+      return {
+        message:
+          "The selected participant, date, or challenges do not meet the competition rules. No entries were added.",
+        success: false,
+      };
+    }
+    if (error.code === "42501") {
+      return {
+        message: "Only an admin can add late completion entries.",
+        success: false,
+      };
+    }
+    console.error("Admin completion backfill failed:", error.message);
+    return {
+      message: "Could not add those completions. No entries were added.",
+      success: false,
+    };
+  }
+
+  if (insertedCount !== challengeIds.length) {
+    console.error("Admin completion backfill returned an unexpected insert count.");
+    return {
+      message: "Could not confirm all selected completions were added. Refresh and check the participant log.",
+      success: false,
+    };
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/log");
+  revalidatePath("/leaderboard");
+  return {
+    message: `${insertedCount} late completion${insertedCount === 1 ? "" : "s"} added.`,
+    success: true,
+  };
+}
 
 function isChallengeTier(
   tier: string,
@@ -112,6 +194,7 @@ export async function addChallenge(
   const points = Number(formData.get("points"));
   const startsOn = String(formData.get("starts_on") ?? "") || null;
   const endsOn = String(formData.get("ends_on") ?? "") || null;
+  const oncePerWeek = formData.get("once_per_week") === "on";
 
   if (!isChallengeTier(tier) || !title || !Number.isInteger(points) || points <= 0) {
     return { message: "Enter a tier, title, and positive whole-number points.", success: false };
@@ -130,6 +213,7 @@ export async function addChallenge(
     points,
     starts_on: startsOn,
     ends_on: endsOn,
+    once_per_week: oncePerWeek,
   });
   if (error) {
     if (error.code === "23505") {
@@ -161,6 +245,56 @@ export async function deactivateChallenge(
   revalidatePath("/admin");
   revalidatePath("/log");
   return { message: "Challenge deactivated.", success: true };
+}
+
+export async function reactivateChallenge(
+  _previousState: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const { supabase } = await requireAdmin();
+  const id = String(formData.get("challenge_id") ?? "");
+  if (!id) return { message: "Choose a challenge to reactivate.", success: false };
+
+  const { data, error } = await supabase
+    .from("challenges")
+    .update({ active: true })
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    console.error("Admin challenge reactivation failed:", error.message);
+    return { message: "Could not reactivate that challenge.", success: false };
+  }
+  if (!data) return { message: "That challenge could not be found.", success: false };
+
+  revalidatePath("/admin");
+  revalidatePath("/log");
+  return { message: "Challenge reactivated.", success: true };
+}
+
+export async function setChallengeWeeklyLimit(
+  _previousState: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const { supabase } = await requireAdmin();
+  const id = String(formData.get("challenge_id") ?? "");
+  const oncePerWeek = formData.get("once_per_week") === "on";
+  if (!id) return { message: "Choose a challenge to update.", success: false };
+
+  const { data, error } = await supabase
+    .from("challenges")
+    .update({ once_per_week: oncePerWeek })
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    console.error("Challenge weekly limit update failed:", error.message);
+    return { message: "Could not update the weekly limit.", success: false };
+  }
+  if (!data) return { message: "That challenge could not be found.", success: false };
+  revalidatePath("/admin");
+  revalidatePath("/log");
+  return { message: "Weekly limit updated.", success: true };
 }
 
 export async function addAllowedEmail(

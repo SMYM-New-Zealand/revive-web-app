@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { completeChallenge } from "@/app/actions";
 
@@ -9,6 +9,7 @@ type Challenge = {
   tier: "novice" | "challenger" | "elite" | "bonus";
   title: string;
   points: number;
+  once_per_week: boolean;
 };
 
 const tiers: {
@@ -26,6 +27,7 @@ const tiers: {
 export function ChallengeLog({
   challenges,
   initialCompletedIds,
+  initialWeeklyCompletedIds,
   todayPoints,
   totalPoints,
   dateLabel,
@@ -34,6 +36,7 @@ export function ChallengeLog({
 }: {
   challenges: Challenge[];
   initialCompletedIds: string[];
+  initialWeeklyCompletedIds: string[];
   todayPoints: number;
   totalPoints: number;
   dateLabel: string;
@@ -42,18 +45,30 @@ export function ChallengeLog({
 }) {
   const router = useRouter();
   const [completedIds, setCompletedIds] = useState(() => new Set(initialCompletedIds));
+  const [weeklyCompletedIds, setWeeklyCompletedIds] = useState(
+    () => new Set(initialWeeklyCompletedIds),
+  );
   const [todayScore, setTodayScore] = useState(todayPoints);
   const [totalScore, setTotalScore] = useState(totalPoints);
   const [pendingIds, setPendingIds] = useState(() => new Set<string>());
+  const pendingRef = useRef(false);
   const [notice, setNotice] = useState("");
 
   async function handleSelect(challenge: Challenge) {
-    if (completedIds.has(challenge.id) || pendingIds.has(challenge.id)) return;
+    if (
+      completedIds.has(challenge.id) ||
+      weeklyCompletedIds.has(challenge.id) ||
+      pendingRef.current
+    ) return;
+    pendingRef.current = true;
     const previousCompleted = completedIds;
     const previousToday = todayScore;
     const previousTotal = totalScore;
     setNotice("");
     setCompletedIds(new Set([...completedIds, challenge.id]));
+    if (challenge.once_per_week) {
+      setWeeklyCompletedIds(new Set([...weeklyCompletedIds, challenge.id]));
+    }
     setTodayScore((score) => score + challenge.points);
     setTotalScore((score) => score + challenge.points);
     setPendingIds((current) => new Set(current).add(challenge.id));
@@ -62,6 +77,11 @@ export function ChallengeLog({
       const result = await completeChallenge(challenge.id);
       if (!result.ok) {
         setCompletedIds(previousCompleted);
+        if (challenge.once_per_week) {
+          setWeeklyCompletedIds(
+            new Set([...weeklyCompletedIds].filter((id) => id !== challenge.id)),
+          );
+        }
         setTodayScore(previousToday);
         setTotalScore(previousTotal);
         setNotice(result.error ?? "Couldn’t save that challenge.");
@@ -72,8 +92,14 @@ export function ChallengeLog({
       setCompletedIds(previousCompleted);
       setTodayScore(previousToday);
       setTotalScore(previousTotal);
+      if (challenge.once_per_week) {
+        setWeeklyCompletedIds(
+          new Set([...weeklyCompletedIds].filter((id) => id !== challenge.id)),
+        );
+      }
       setNotice("Connection issue — your challenge wasn’t saved. Please try again.");
     } finally {
+      pendingRef.current = false;
       setPendingIds((current) => {
         const next = new Set(current);
         next.delete(challenge.id);
@@ -147,32 +173,45 @@ export function ChallengeLog({
               <div className="grid gap-2 sm:grid-cols-2">
                 {items.map((challenge) => {
                   const completed = completedIds.has(challenge.id);
+                  const weeklyCompleted = weeklyCompletedIds.has(challenge.id);
+                  const locked = completed || weeklyCompleted;
                   const pending = pendingIds.has(challenge.id);
                   return (
                     <button
                       key={challenge.id}
                       type="button"
-                      disabled={completed || pendingIds.size > 0 || !inCompetition}
+                      disabled={locked || pendingIds.size > 0 || !inCompetition}
                       onClick={() => void handleSelect(challenge)}
-                      aria-pressed={completed}
+                      aria-pressed={locked}
                       className={`group flex min-h-[72px] items-center gap-3 rounded-xl border p-4 text-left transition ${
-                        completed
+                        locked
                           ? "border-emerald-300/20 bg-emerald-300/[0.07] text-white/55"
                           : "border-white/[0.07] bg-[#20231e] text-white/90 hover:border-amber-200/30 hover:bg-[#262a23] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
                       }`}
                     >
                       <span
                         className={`grid size-7 shrink-0 place-items-center rounded-full border text-xs font-bold transition ${
-                          completed
+                          locked
                             ? "border-emerald-300/40 bg-emerald-300/15 text-emerald-200"
                             : "border-white/20 text-white/20 group-hover:border-amber-200/60 group-hover:text-amber-200"
                         }`}
                         aria-hidden="true"
                       >
-                        {completed ? "✓" : pending ? "…" : ""}
+                        {locked ? "✓" : pending ? "…" : ""}
                       </span>
-                      <span className="flex-1 text-sm leading-5 sm:text-[15px]">
-                        {challenge.title}
+                      <span className="flex-1">
+                        <span className="block text-sm leading-5 sm:text-[15px]">
+                          {challenge.title}
+                        </span>
+                        {locked ? (
+                          <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wider text-emerald-200/65">
+                            {weeklyCompleted ? "Completed this week" : "Completed today"}
+                          </span>
+                        ) : challenge.once_per_week ? (
+                          <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wider text-amber-200/50">
+                            Once per competition week
+                          </span>
+                        ) : null}
                       </span>
                       <span className="shrink-0 text-xs font-semibold text-amber-200/75">
                         +{challenge.points}
