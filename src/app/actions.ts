@@ -19,59 +19,72 @@ export async function signOut() {
 export type CompletionActionResult = {
   ok: boolean;
   error?: string;
+  refresh?: boolean;
 };
 
-export async function completeChallenge(
-  challengeId: string,
+export async function saveChallengeSelection(
+  challengeIds: string[],
 ): Promise<CompletionActionResult> {
   const { supabase, user, config } = await requireParticipant();
   const today = dateInTimeZone(new Date(), config.timezone);
   if (today < config.starts_on || today > config.ends_on) {
     return { ok: false, error: "Today is outside the competition dates." };
   }
+  const uniqueChallengeIds = [...new Set(challengeIds)];
+  if (
+    uniqueChallengeIds.length === 0 ||
+    uniqueChallengeIds.length !== challengeIds.length
+  ) {
+    return { ok: false, error: "Select at least one different challenge to save." };
+  }
 
-  const { data: challenge, error: challengeError } = await supabase
+  const { data: challenges, error: challengeError } = await supabase
     .from("challenges")
     .select("id, points, active, starts_on, ends_on")
-    .eq("id", challengeId)
-    .maybeSingle();
+    .in("id", uniqueChallengeIds);
 
   if (challengeError) {
     console.error("Challenge availability check failed:", challengeError.message);
-    return { ok: false, error: "Couldn’t check that challenge. Please refresh and try again." };
-  }
-  if (!challenge) {
-    return { ok: false, error: "That challenge could not be found." };
+    return { ok: false, error: "Couldn’t check those challenges. Please refresh and try again." };
   }
   if (
-    !challenge.active ||
-    !isAvailableOnDate(challenge.starts_on, challenge.ends_on, today)
+    !challenges ||
+    challenges.length !== uniqueChallengeIds.length ||
+    challenges.some(
+      (challenge) =>
+        !challenge.active ||
+        !isAvailableOnDate(challenge.starts_on, challenge.ends_on, today),
+    )
   ) {
-    return { ok: false, error: "That challenge is not available today." };
+    return { ok: false, error: "One or more selected challenges aren’t available today." };
   }
 
-  const { error } = await supabase.from("completions").insert({
-    user_id: user.id,
-    challenge_id: challenge.id,
-    competition_day: today,
-    points_awarded: challenge.points,
-  });
+  const { error } = await supabase.from("completions").insert(
+    challenges.map((challenge) => ({
+      user_id: user.id,
+      challenge_id: challenge.id,
+      competition_day: today,
+      points_awarded: challenge.points,
+    })),
+  );
 
   if (error) {
     if (error.code === "23505") {
       return {
         ok: false,
-        error: "This challenge is already recorded today or has reached its weekly limit.",
+        error:
+          "At least one selected challenge is already saved today or has reached its weekly limit. Review your selection and try again.",
+        refresh: true,
       };
     }
     if (error.code === "23514") {
       return {
         ok: false,
-        error: "This challenge can’t be recorded for today. Refresh and try again.",
+        error: "These challenges can’t be saved for today. Refresh and try again.",
       };
     }
-    console.error("Challenge completion insert failed:", error.message);
-    return { ok: false, error: "Couldn’t save that challenge. Please try again." };
+    console.error("Challenge selection save failed:", error.message);
+    return { ok: false, error: "Couldn’t save your selection. Please try again." };
   }
 
   revalidatePath("/log");
