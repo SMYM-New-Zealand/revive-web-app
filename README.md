@@ -79,9 +79,10 @@ once per competition day, and follow a live leaderboard.
    values ('admin@example.com', true, 'male');
    ```
 
-   Choose the admin’s actual gender (`male` or `female`). Set a gender for each
-   existing participant in the Admin allowlist section; users without a gender
-   assigned will not appear on either participant leaderboard until it is set.
+   The Admin allowlist form does not edit gender. The leaderboard reads the
+   existing gender value from `allowed_emails`; manage those values in your
+   Supabase database workflow. Users without a gender assigned will not appear
+   on either participant leaderboard until one is present.
 
 6. Run `supabase/seed.sql` in the Supabase SQL Editor. It inserts the poster’s
    Novice, Challenger, Elite, and Bonus challenges and the initial competition

@@ -8,7 +8,6 @@ import {
   deactivateChallenge,
   reactivateChallenge,
   setChallengeWeeklyLimit,
-  updateAllowedEmailGender,
   updateCompetition,
   type AdminActionState,
 } from "@/app/actions";
@@ -26,11 +25,7 @@ type Challenge = {
   ends_on: string | null;
 };
 
-type AllowedEmail = {
-  email: string;
-  is_admin: boolean;
-  gender: "male" | "female" | null;
-};
+type AllowedEmail = { email: string; is_admin: boolean };
 type Participant = { id: string; display_name: string; email: string };
 
 export function AdminForms({
@@ -169,7 +164,10 @@ export function AdminForms({
       />
 
       <section className="rounded-2xl border border-white/[0.09] bg-[#1d211c] p-5 sm:p-6">
-        <SectionHeading title="Participant allowlist" description="Only emails added here can use the app after Google sign-in." />
+        <SectionHeading
+          title="Participant allowlist"
+          description="Only emails added here can use the app after Google sign-in. Gender is read from the existing Supabase allowlist data and is not edited here."
+        />
         <form action={emailAction} className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end">
           <label className="flex-1 text-xs font-semibold text-white/55">
             Google account email
@@ -180,19 +178,6 @@ export function AdminForms({
               placeholder="participant@example.com"
               className="mt-2 w-full rounded-xl border border-white/10 bg-[#151813] px-3 py-3 text-sm text-white placeholder:text-white/25"
             />
-          </label>
-          <label className="text-xs font-semibold text-white/55">
-            Gender
-            <select
-              required
-              name="gender"
-              defaultValue=""
-              className="mt-2 w-full rounded-xl border border-white/10 bg-[#151813] px-3 py-3 text-sm text-white sm:w-36"
-            >
-              <option value="" disabled>Select gender</option>
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-            </select>
           </label>
           <label className="flex items-center gap-2 py-3 text-xs text-white/65">
             <input
@@ -228,50 +213,12 @@ export function AdminForms({
 }
 
 function AllowedEmailRow({ entry }: { entry: AllowedEmail }) {
-  const [state, action, pending] = useActionState(
-    updateAllowedEmailGender,
-    emptyAdminState,
-  );
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm text-white/75">{entry.email}</p>
-        <p className="mt-1 text-[10px] uppercase tracking-wider text-white/40">
-          {entry.is_admin ? "Admin" : "Participant"}
-        </p>
-      </div>
-      <form action={action} className="flex items-center gap-2">
-        <input type="hidden" name="email" value={entry.email} />
-        <label className="sr-only" htmlFor={`gender-${entry.email}`}>
-          Gender for {entry.email}
-        </label>
-        <select
-          id={`gender-${entry.email}`}
-          name="gender"
-          defaultValue={entry.gender ?? ""}
-          required
-          disabled={pending}
-          className="rounded-xl border border-white/10 bg-[#151813] px-3 py-2 text-xs text-white"
-        >
-          <option value="" disabled>Select gender</option>
-          <option value="male">Male</option>
-          <option value="female">Female</option>
-        </select>
-        <button
-          disabled={pending}
-          className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-white/65 hover:border-amber-200/30 hover:text-amber-100 disabled:opacity-50"
-        >
-          {pending ? "Saving…" : "Save"}
-        </button>
-      </form>
-      {state.message && (
-        <p
-          role={state.success ? "status" : "alert"}
-          className={`w-full text-xs ${state.success ? "text-emerald-200" : "text-rose-200"}`}
-        >
-          {state.message}
-        </p>
-      )}
+    <div className="flex items-center justify-between gap-3 px-4 py-3">
+      <span className="truncate text-sm text-white/75">{entry.email}</span>
+      <span className="shrink-0 rounded-full bg-white/[0.07] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white/45">
+        {entry.is_admin ? "Admin" : "Participant"}
+      </span>
     </div>
   );
 }
