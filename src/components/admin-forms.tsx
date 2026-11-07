@@ -1,11 +1,12 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import {
   addAllowedEmail,
   addChallenge,
   backfillCompletions,
   deactivateChallenge,
+  promoteAllowedEmails,
   reactivateChallenge,
   setChallengeWeeklyLimit,
   updateCompetition,
@@ -49,6 +50,10 @@ export function AdminForms({
   );
   const [emailState, emailAction, addingEmail] = useActionState(
     addAllowedEmail,
+    emptyAdminState,
+  );
+  const [promotionState, promotionAction, promotingAdmins] = useActionState(
+    promoteAllowedEmails,
     emptyAdminState,
   );
   const [dateState, dateAction, savingDates] = useActionState(
@@ -179,25 +184,15 @@ export function AdminForms({
               className="mt-2 w-full rounded-xl border border-white/10 bg-[#151813] px-3 py-3 text-sm text-white placeholder:text-white/25"
             />
           </label>
-          <label className="flex items-center gap-2 py-3 text-xs text-white/65">
-            <input
-              type="checkbox"
-              name="is_admin"
-              className="size-4 accent-amber-300"
-            />
-            Admin access
-          </label>
           <SubmitButton pending={addingEmail}>Add email</SubmitButton>
           <ActionMessage state={emailState} />
         </form>
-        <div className="mt-5 divide-y divide-white/[0.07] rounded-xl border border-white/[0.07]">
-          {allowedEmails.map((entry) => (
-            <AllowedEmailRow key={entry.email} entry={entry} />
-          ))}
-          {allowedEmails.length === 0 && (
-            <p className="px-4 py-5 text-sm text-white/40">No allowed emails found.</p>
-          )}
-        </div>
+        <AllowedEmailPromotionForm
+          allowedEmails={allowedEmails}
+          action={promotionAction}
+          state={promotionState}
+          pending={promotingAdmins}
+        />
       </section>
 
       <section className="rounded-2xl border border-white/[0.09] bg-[#1d211c] p-5 sm:p-6">
@@ -212,14 +207,100 @@ export function AdminForms({
   );
 }
 
-function AllowedEmailRow({ entry }: { entry: AllowedEmail }) {
+function AllowedEmailPromotionForm({
+  allowedEmails,
+  action,
+  state,
+  pending,
+}: {
+  allowedEmails: AllowedEmail[];
+  action: (formData: FormData) => void;
+  state: AdminActionState;
+  pending: boolean;
+}) {
+  const participants = allowedEmails.filter((entry) => !entry.is_admin);
+  const [selectedEmails, setSelectedEmails] = useState<string[]>([]);
+  const allSelected =
+    participants.length > 0 &&
+    participants.every((participant) => selectedEmails.includes(participant.email));
+
+  useEffect(() => {
+    if (state.success) setSelectedEmails([]);
+  }, [state]);
+
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-3">
-      <span className="truncate text-sm text-white/75">{entry.email}</span>
-      <span className="shrink-0 rounded-full bg-white/[0.07] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white/45">
-        {entry.is_admin ? "Admin" : "Participant"}
-      </span>
-    </div>
+    <form action={action} className="mt-5">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-white/45">
+          Select participants to grant admin access. Existing admins cannot be changed here.
+        </p>
+        {participants.length > 0 && (
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-white/55">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              disabled={pending}
+              onChange={(event) => {
+                const checked = event.currentTarget.checked;
+                setSelectedEmails(checked
+                  ? participants.map((participant) => participant.email)
+                  : []);
+              }}
+              className="size-4 accent-amber-300"
+            />
+            Select all participants
+          </label>
+        )}
+      </div>
+      <div className="divide-y divide-white/[0.07] rounded-xl border border-white/[0.07]">
+        {allowedEmails.map((entry) => (
+          <label
+            key={entry.email}
+            className={`flex items-center justify-between gap-3 px-4 py-3 ${
+              entry.is_admin ? "cursor-default" : "cursor-pointer"
+            }`}
+          >
+            <span className="flex min-w-0 items-center gap-3">
+              {!entry.is_admin && (
+                <input
+                  type="checkbox"
+                  name="emails"
+                  value={entry.email}
+                  checked={selectedEmails.includes(entry.email)}
+                  disabled={pending}
+                  onChange={(event) => {
+                    const checked = event.currentTarget.checked;
+                    setSelectedEmails((current) =>
+                      checked
+                        ? [...current, entry.email]
+                        : current.filter((email) => email !== entry.email),
+                    );
+                  }}
+                  className="size-4 shrink-0 accent-amber-300"
+                />
+              )}
+              <span className="truncate text-sm text-white/75">{entry.email}</span>
+            </span>
+            <span className="shrink-0 rounded-full bg-white/[0.07] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white/45">
+              {entry.is_admin ? "Admin" : "Participant"}
+            </span>
+          </label>
+        ))}
+        {allowedEmails.length === 0 && (
+          <p className="px-4 py-5 text-sm text-white/40">No allowed emails found.</p>
+        )}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <button
+          type="submit"
+          disabled={pending || selectedEmails.length === 0}
+          className="shrink-0 rounded-full bg-amber-300 px-5 py-3 text-xs font-bold text-[#211b0d] transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {pending ? "Saving…" : `Save admin access${selectedEmails.length ? ` (${selectedEmails.length})` : ""}`}
+        </button>
+        <ActionMessage state={state} />
+      </div>
+    </form>
   );
 }
 

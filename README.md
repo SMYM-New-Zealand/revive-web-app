@@ -97,7 +97,9 @@ once per competition day, and follow a live leaderboard.
    ```
 
    Visit [http://localhost:3000](http://localhost:3000). Add participant emails
-   through the Admin page after signing in as the initial administrator.
+   through the Admin page after signing in as the initial administrator. To grant
+   admin access to existing participants, select one or more participant entries
+   in the allowlist and save; existing admins are not editable there.
 
 ## Tests and deployment
 

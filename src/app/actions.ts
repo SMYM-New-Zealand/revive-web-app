@@ -316,14 +316,13 @@ export async function addAllowedEmail(
 ): Promise<AdminActionState> {
   const { supabase } = await requireAdmin();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const isAdmin = formData.get("is_admin") === "on";
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { message: "Enter a valid email address.", success: false };
   }
 
   const { error } = await supabase
     .from("allowed_emails")
-    .insert({ email, is_admin: isAdmin });
+    .insert({ email, is_admin: false });
   if (error) {
     if (error.code === "23505") {
       return { message: "That email is already on the allowlist.", success: false };
@@ -333,6 +332,47 @@ export async function addAllowedEmail(
   }
   revalidatePath("/admin");
   return { message: "Email added to the allowlist.", success: true };
+}
+
+export async function promoteAllowedEmails(
+  _previousState: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const { supabase } = await requireAdmin();
+  const submittedEmails = formData.getAll("emails");
+  if (
+    submittedEmails.length === 0 ||
+    submittedEmails.some((value) => typeof value !== "string")
+  ) {
+    return { message: "Select at least one participant to promote.", success: false };
+  }
+
+  const emails = [...new Set(
+    submittedEmails.map((value) => String(value).trim().toLowerCase()),
+  )];
+  if (emails.some((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
+    return { message: "The participant selection is invalid. Refresh and try again.", success: false };
+  }
+
+  const { data, error } = await supabase
+    .from("allowed_emails")
+    .update({ is_admin: true })
+    .in("email", emails)
+    .eq("is_admin", false)
+    .select("email");
+  if (error) {
+    console.error("Admin promotion failed:", error.message);
+    return { message: "Could not promote the selected participants.", success: false };
+  }
+  if (!data?.length) {
+    return { message: "No selected participants needed admin access.", success: false };
+  }
+
+  revalidatePath("/admin");
+  return {
+    message: `${data.length} participant${data.length === 1 ? "" : "s"} promoted to admin.`,
+    success: true,
+  };
 }
 
 export async function updateCompetition(
