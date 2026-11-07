@@ -8,6 +8,7 @@ type LeaderboardRow = {
   rank: number;
   user_id: string;
   display_name: string;
+  gender: "male" | "female";
   today_points: number;
   total_points: number;
 };
@@ -15,9 +16,11 @@ type LeaderboardRow = {
 export function LeaderboardLive({
   rows,
   currentUserId,
+  isAdmin,
 }: {
   rows: LeaderboardRow[];
   currentUserId: string;
+  isAdmin: boolean;
 }) {
   const router = useRouter();
   const [lastUpdated, setLastUpdated] = useState("");
@@ -57,6 +60,15 @@ export function LeaderboardLive({
     };
   }, [router]);
 
+  const genderGroups = isAdmin
+    ? (["male", "female"] as const).map((gender) => ({
+        gender,
+        rows: rows.filter((row) => row.gender === gender),
+      }))
+    : rows.length > 0
+      ? [{ gender: rows[0].gender, rows }]
+      : [];
+
   return (
     <>
       <div className="mb-3 flex items-center justify-between px-1 text-xs text-white/40">
@@ -65,20 +77,36 @@ export function LeaderboardLive({
           {lastUpdated ? `Last updated ${lastUpdated}` : "Updating…"}
         </span>
       </div>
-      <div className="overflow-hidden rounded-2xl border border-white/[0.09] bg-[#1d211c]">
-        <div className="grid grid-cols-[48px_minmax(0,1fr)_70px_78px] gap-2 border-b border-white/[0.08] bg-white/[0.025] px-4 py-3 text-[10px] font-bold uppercase tracking-[0.16em] text-white/40 sm:grid-cols-[64px_minmax(0,1fr)_100px_110px] sm:px-6">
-          <span>Rank</span>
-          <span>Participant</span>
-          <span className="text-right">Today</span>
-          <span className="text-right">Total</span>
+      {genderGroups.length === 0 ? (
+        <div className="overflow-hidden rounded-2xl border border-white/[0.09] bg-[#1d211c] px-5 py-12 text-center text-sm text-white/45">
+          No participants are currently assigned to a gender leaderboard.
         </div>
-        {rows.length === 0 ? (
-          <p className="px-5 py-12 text-center text-sm text-white/45">
-            No participants yet. Add emails to the allowlist to get started.
-          </p>
-        ) : (
-          <ol>
-            {rows.map((row) => {
+      ) : (
+        <div className="space-y-6">
+          {genderGroups.map((group) => (
+            <section key={group.gender} aria-labelledby={`${group.gender}-leaderboard`}>
+              {isAdmin && (
+                <h2
+                  id={`${group.gender}-leaderboard`}
+                  className="mb-3 text-sm font-bold uppercase tracking-[0.2em] text-amber-200"
+                >
+                  {group.gender} leaderboard
+                </h2>
+              )}
+              <div className="overflow-hidden rounded-2xl border border-white/[0.09] bg-[#1d211c]">
+                <div className="grid grid-cols-[48px_minmax(0,1fr)_70px_78px] gap-2 border-b border-white/[0.08] bg-white/[0.025] px-4 py-3 text-[10px] font-bold uppercase tracking-[0.16em] text-white/40 sm:grid-cols-[64px_minmax(0,1fr)_100px_110px] sm:px-6">
+                  <span>Rank</span>
+                  <span>Participant</span>
+                  <span className="text-right">Today</span>
+                  <span className="text-right">Total</span>
+                </div>
+                {group.rows.length === 0 ? (
+                  <p className="px-5 py-8 text-center text-sm text-white/45">
+                    No participants in this leaderboard yet.
+                  </p>
+                ) : (
+                  <ol>
+                    {group.rows.map((row) => {
               const isCurrentUser = row.user_id === currentUserId;
               return (
                 <li
@@ -130,11 +158,15 @@ export function LeaderboardLive({
                 </li>
               );
             })}
-          </ol>
-        )}
-      </div>
+                  </ol>
+                )}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
       <p className="mt-4 text-center text-xs text-white/35">
-        Tied scores share the same rank.
+        Tied scores share the same rank within each gender leaderboard.
       </p>
     </>
   );

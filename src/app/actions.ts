@@ -304,13 +304,17 @@ export async function addAllowedEmail(
   const { supabase } = await requireAdmin();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const isAdmin = formData.get("is_admin") === "on";
+  const gender = String(formData.get("gender") ?? "");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { message: "Enter a valid email address.", success: false };
+  }
+  if (gender !== "male" && gender !== "female") {
+    return { message: "Choose male or female for this participant.", success: false };
   }
 
   const { error } = await supabase
     .from("allowed_emails")
-    .insert({ email, is_admin: isAdmin });
+    .insert({ email, is_admin: isAdmin, gender });
   if (error) {
     if (error.code === "23505") {
       return { message: "That email is already on the allowlist.", success: false };
@@ -320,6 +324,37 @@ export async function addAllowedEmail(
   }
   revalidatePath("/admin");
   return { message: "Email added to the allowlist.", success: true };
+}
+
+export async function updateAllowedEmailGender(
+  _previousState: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const { supabase } = await requireAdmin();
+  const email = String(formData.get("email") ?? "").trim();
+  const gender = String(formData.get("gender") ?? "");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { message: "Choose a valid allowlist email.", success: false };
+  }
+  if (gender !== "male" && gender !== "female") {
+    return { message: "Choose male or female.", success: false };
+  }
+
+  const { data, error } = await supabase
+    .from("allowed_emails")
+    .update({ gender })
+    .eq("email", email)
+    .select("email")
+    .maybeSingle();
+  if (error) {
+    console.error("Allowlist gender update failed:", error.message);
+    return { message: "Could not update this participant’s gender.", success: false };
+  }
+  if (!data) return { message: "That allowlist email could not be found.", success: false };
+
+  revalidatePath("/admin");
+  revalidatePath("/leaderboard");
+  return { message: "Gender updated.", success: true };
 }
 
 export async function updateCompetition(

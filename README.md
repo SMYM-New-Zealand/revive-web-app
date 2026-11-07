@@ -75,9 +75,13 @@ once per competition day, and follow a live leaderboard.
    with the admin’s Google account). This is required before anyone can sign in:
 
    ```sql
-   insert into public.allowed_emails (email, is_admin)
-   values ('admin@example.com', true);
+   insert into public.allowed_emails (email, is_admin, gender)
+   values ('admin@example.com', true, 'male');
    ```
+
+   Choose the admin’s actual gender (`male` or `female`). Set a gender for each
+   existing participant in the Admin allowlist section; users without a gender
+   assigned will not appear on either participant leaderboard until it is set.
 
 6. Run `supabase/seed.sql` in the Supabase SQL Editor. It inserts the poster’s
    Novice, Challenger, Elite, and Bonus challenges and the initial competition
@@ -130,3 +134,6 @@ JavaScript origins. Apply any new migrations with `supabase db push --remote`.
   protected database function. The broadcast contains no participant or points
   data.
 - Admin writes are protected by both application checks and RLS.
+- Participant leaderboard queries are filtered by the gender on their own
+  allowlist entry. Admins see separate male and female rankings, each ranked
+  within its own group.
