@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { completeChallenge } from "@/app/actions";
+import { saveChallengeSelection } from "@/app/actions";
 
 type Challenge = {
   id: string;
@@ -48,65 +48,98 @@ export function ChallengeLog({
   const [weeklyCompletedIds, setWeeklyCompletedIds] = useState(
     () => new Set(initialWeeklyCompletedIds),
   );
+  const [selectedIds, setSelectedIds] = useState(() => new Set<string>());
   const [todayScore, setTodayScore] = useState(todayPoints);
   const [totalScore, setTotalScore] = useState(totalPoints);
-  const [pendingIds, setPendingIds] = useState(() => new Set<string>());
+  const [isSaving, setIsSaving] = useState(false);
   const pendingRef = useRef(false);
+  const displayedDayRef = useRef(today);
   const [notice, setNotice] = useState("");
 
-  async function handleSelect(challenge: Challenge) {
+  useEffect(() => {
+    if (displayedDayRef.current !== today) {
+      displayedDayRef.current = today;
+      setSelectedIds(new Set());
+      setNotice("");
+    }
+  }, [today]);
+
+  const completedKey = initialCompletedIds.join(",");
+  const weeklyCompletedKey = initialWeeklyCompletedIds.join(",");
+  useEffect(() => {
+    const savedIds = new Set(completedKey ? completedKey.split(",") : []);
+    const savedWeeklyIds = new Set(weeklyCompletedKey ? weeklyCompletedKey.split(",") : []);
+    setCompletedIds(savedIds);
+    setWeeklyCompletedIds(savedWeeklyIds);
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      for (const id of next) {
+        if (savedIds.has(id) || savedWeeklyIds.has(id)) next.delete(id);
+      }
+      return next;
+    });
+    setTodayScore(todayPoints);
+    setTotalScore(totalPoints);
+  }, [
+    completedKey,
+    totalPoints,
+    todayPoints,
+    weeklyCompletedKey,
+  ]);
+
+  function handleSelect(challenge: Challenge) {
     if (
       completedIds.has(challenge.id) ||
       weeklyCompletedIds.has(challenge.id) ||
-      pendingRef.current
+      isSaving
     ) return;
-    pendingRef.current = true;
-    const previousCompleted = completedIds;
-    const previousToday = todayScore;
-    const previousTotal = totalScore;
     setNotice("");
-    setCompletedIds(new Set([...completedIds, challenge.id]));
-    if (challenge.once_per_week) {
-      setWeeklyCompletedIds(new Set([...weeklyCompletedIds, challenge.id]));
-    }
-    setTodayScore((score) => score + challenge.points);
-    setTotalScore((score) => score + challenge.points);
-    setPendingIds((current) => new Set(current).add(challenge.id));
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(challenge.id)) next.delete(challenge.id);
+      else next.add(challenge.id);
+      return next;
+    });
+  }
+
+  async function handleSave() {
+    if (pendingRef.current || selectedIds.size === 0) return;
+    pendingRef.current = true;
+    setIsSaving(true);
+    setNotice("");
+    const selected = challenges.filter((challenge) => selectedIds.has(challenge.id));
+    const points = selected.reduce((sum, challenge) => sum + challenge.points, 0);
 
     try {
-      const result = await completeChallenge(challenge.id);
+      const result = await saveChallengeSelection(selected.map(({ id }) => id));
       if (!result.ok) {
-        setCompletedIds(previousCompleted);
-        if (challenge.once_per_week) {
-          setWeeklyCompletedIds(
-            new Set([...weeklyCompletedIds].filter((id) => id !== challenge.id)),
-          );
-        }
-        setTodayScore(previousToday);
-        setTotalScore(previousTotal);
         setNotice(result.error ?? "Couldn’t save that challenge.");
+        if (result.refresh) router.refresh();
       } else {
+        setCompletedIds((current) => new Set([...current, ...selected.map(({ id }) => id)]));
+        setWeeklyCompletedIds((current) => {
+          const next = new Set(current);
+          for (const challenge of selected) {
+            if (challenge.once_per_week) next.add(challenge.id);
+          }
+          return next;
+        });
+        setTodayScore((score) => score + points);
+        setTotalScore((score) => score + points);
+        setSelectedIds(new Set());
         router.refresh();
       }
     } catch {
-      setCompletedIds(previousCompleted);
-      setTodayScore(previousToday);
-      setTotalScore(previousTotal);
-      if (challenge.once_per_week) {
-        setWeeklyCompletedIds(
-          new Set([...weeklyCompletedIds].filter((id) => id !== challenge.id)),
-        );
-      }
-      setNotice("Connection issue — your challenge wasn’t saved. Please try again.");
+      setNotice("Connection issue — your selection wasn’t saved. Please try again.");
     } finally {
       pendingRef.current = false;
-      setPendingIds((current) => {
-        const next = new Set(current);
-        next.delete(challenge.id);
-        return next;
-      });
+      setIsSaving(false);
     }
   }
+
+  const selectedPoints = challenges
+    .filter((challenge) => selectedIds.has(challenge.id))
+    .reduce((sum, challenge) => sum + challenge.points, 0);
 
   return (
     <div>
@@ -143,6 +176,23 @@ export function ChallengeLog({
         </div>
       )}
 
+      {selectedIds.size > 0 && (
+        <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-amber-200/20 bg-amber-200/[0.06] p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-amber-100/80">
+            {selectedIds.size} {selectedIds.size === 1 ? "challenge" : "challenges"} selected ·{" "}
+            {selectedPoints} points
+          </p>
+          <button
+            type="button"
+            disabled={isSaving}
+            onClick={() => void handleSave()}
+            className="min-h-11 rounded-xl bg-amber-300 px-5 py-2.5 text-sm font-bold text-[#1d1b14] transition hover:bg-amber-200 disabled:cursor-wait disabled:opacity-60"
+          >
+            {isSaving ? "Saving…" : "Save progress"}
+          </button>
+        </div>
+      )}
+
       <div className="space-y-8">
         {tiers.map((tier) => {
           const items = challenges.filter((challenge) => challenge.tier === tier.key);
@@ -175,29 +225,33 @@ export function ChallengeLog({
                   const completed = completedIds.has(challenge.id);
                   const weeklyCompleted = weeklyCompletedIds.has(challenge.id);
                   const locked = completed || weeklyCompleted;
-                  const pending = pendingIds.has(challenge.id);
+                  const selected = selectedIds.has(challenge.id);
                   return (
                     <button
                       key={challenge.id}
                       type="button"
-                      disabled={locked || pendingIds.size > 0 || !inCompetition}
-                      onClick={() => void handleSelect(challenge)}
-                      aria-pressed={locked}
+                      disabled={locked || isSaving || !inCompetition}
+                      onClick={() => handleSelect(challenge)}
+                      aria-pressed={locked || selected}
                       className={`group flex min-h-[72px] items-center gap-3 rounded-xl border p-4 text-left transition ${
                         locked
                           ? "border-emerald-300/20 bg-emerald-300/[0.07] text-white/55"
-                          : "border-white/[0.07] bg-[#20231e] text-white/90 hover:border-amber-200/30 hover:bg-[#262a23] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
+                          : selected
+                            ? "border-amber-200/35 bg-amber-200/[0.09] text-white/95 hover:bg-amber-200/[0.13]"
+                            : "border-white/[0.07] bg-[#20231e] text-white/90 hover:border-amber-200/30 hover:bg-[#262a23] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
                       }`}
                     >
                       <span
                         className={`grid size-7 shrink-0 place-items-center rounded-full border text-xs font-bold transition ${
                           locked
                             ? "border-emerald-300/40 bg-emerald-300/15 text-emerald-200"
-                            : "border-white/20 text-white/20 group-hover:border-amber-200/60 group-hover:text-amber-200"
+                            : selected
+                              ? "border-amber-200/50 bg-amber-200/15 text-amber-200"
+                              : "border-white/20 text-white/20 group-hover:border-amber-200/60 group-hover:text-amber-200"
                         }`}
                         aria-hidden="true"
                       >
-                        {locked ? "✓" : pending ? "…" : ""}
+                        {locked || selected ? "✓" : ""}
                       </span>
                       <span className="flex-1">
                         <span className="block text-sm leading-5 sm:text-[15px]">
@@ -206,6 +260,10 @@ export function ChallengeLog({
                         {locked ? (
                           <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wider text-emerald-200/65">
                             {weeklyCompleted ? "Completed this week" : "Completed today"}
+                          </span>
+                        ) : selected ? (
+                          <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wider text-amber-200/70">
+                            Selected · tap to remove
                           </span>
                         ) : challenge.once_per_week ? (
                           <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wider text-amber-200/50">
@@ -225,8 +283,8 @@ export function ChallengeLog({
         })}
       </div>
       <p className="mt-8 border-t border-white/[0.08] pt-5 text-center text-xs leading-5 text-white/40">
-        A completed challenge locks for today. You can earn its points again on
-        another competition day.
+        Selections stay editable until saved. Saved challenges lock for today,
+        or for the competition week when marked weekly.
       </p>
       <span className="sr-only">Competition day {today}</span>
     </div>
