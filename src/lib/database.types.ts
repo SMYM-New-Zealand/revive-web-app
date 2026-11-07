@@ -101,7 +101,7 @@ export type Database = {
           rank: number;
           user_id: string;
           display_name: string;
-          gender: "male" | "female";
+          gender: "male" | "female" | null;
           total_points: number;
         };
         Relationships: [];
@@ -124,7 +124,7 @@ export type Database = {
           rank: number;
           user_id: string;
           display_name: string;
-          gender: "male" | "female";
+          gender: "male" | "female" | null;
           today_points: number;
           total_points: number;
         }[];

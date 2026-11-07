@@ -8,7 +8,7 @@ type LeaderboardRow = {
   rank: number;
   user_id: string;
   display_name: string;
-  gender: "male" | "female";
+  gender: "male" | "female" | null;
   today_points: number;
   total_points: number;
 };
@@ -61,10 +61,15 @@ export function LeaderboardLive({
   }, [router]);
 
   const genderGroups = isAdmin
-    ? (["male", "female"] as const).map((gender) => ({
-        gender,
-        rows: rows.filter((row) => row.gender === gender),
-      }))
+    ? [
+        ...(["male", "female"] as const).map((gender) => ({
+          gender,
+          rows: rows.filter((row) => row.gender === gender),
+        })),
+        ...(rows.some((row) => row.gender === null)
+          ? [{ gender: null, rows: rows.filter((row) => row.gender === null) }]
+          : []),
+      ]
     : rows.length > 0
       ? [{ gender: rows[0].gender, rows }]
       : [];
@@ -90,7 +95,7 @@ export function LeaderboardLive({
                   id={`${group.gender}-leaderboard`}
                   className="mb-3 text-sm font-bold uppercase tracking-[0.2em] text-amber-200"
                 >
-                  {group.gender} leaderboard
+                  {group.gender ? `${group.gender} leaderboard` : "Gender not set"}
                 </h2>
               )}
               <div className="overflow-hidden rounded-2xl border border-white/[0.09] bg-[#1d211c]">
