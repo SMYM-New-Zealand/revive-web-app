@@ -17,8 +17,8 @@ export type Database = {
   public: {
     Tables: {
       allowed_emails: Table<
-        { email: string; is_admin: boolean },
-        { email: string; is_admin?: boolean }
+        { email: string; is_admin: boolean; gender: "male" | "female" | null },
+        { email: string; is_admin?: boolean; gender?: "male" | "female" | null }
       >;
       profiles: Table<
         { id: string; email: string; display_name: string; created_at: string },
@@ -97,12 +97,19 @@ export type Database = {
         Relationships: [];
       };
       leaderboard: {
-        Row: { rank: number; user_id: string; display_name: string; total_points: number };
+        Row: {
+          rank: number;
+          user_id: string;
+          display_name: string;
+          gender: "male" | "female";
+          total_points: number;
+        };
         Relationships: [];
       };
     };
     Functions: {
       sync_my_profile: { Args: Record<string, never>; Returns: boolean };
+      current_user_gender: { Args: Record<string, never>; Returns: "male" | "female" | null };
       admin_backfill_completions: {
         Args: {
           p_user_id: string;
@@ -117,6 +124,7 @@ export type Database = {
           rank: number;
           user_id: string;
           display_name: string;
+          gender: "male" | "female";
           today_points: number;
           total_points: number;
         }[];

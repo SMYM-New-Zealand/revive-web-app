@@ -14,7 +14,7 @@ export default async function AdminPage() {
     { data: participants, error: participantsError },
   ] = await Promise.all([
     supabase.from("challenges").select("*").order("tier").order("sort_order"),
-    supabase.from("allowed_emails").select("email, is_admin").order("email"),
+    supabase.from("allowed_emails").select("email, is_admin, gender").order("email"),
     supabase.from("profiles").select("id, display_name, email").order("display_name"),
   ]);
   if (challengeError) throw new Error(`Could not load challenges: ${challengeError.message}`);
