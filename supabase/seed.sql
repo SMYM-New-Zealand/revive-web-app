@@ -33,7 +33,8 @@ values
   ('bonus', 'Attend daily Mass/Qurbana for the next six days', 100, '2026-11-02', '2026-11-08', 10, true),
   ('bonus', 'Go for confession once in the next five days', 100, '2026-11-02', '2026-11-08', 20, true),
   ('bonus', 'Pray 33 prayers for the souls in purgatory for the next six days', 100, '2026-11-02', '2026-11-08', 30, true),
-  ('bonus', 'Complete 150 Pushups', 100, '2026-11-02', '2026-11-08', 40, true)
+  ('bonus', 'Complete 150 Pushups', 100, '2026-11-02', '2026-11-08', 40, true),
+  ('bonus', 'Historical Points', 1, null, null, 0, true)
 on conflict (tier, title, target_gender) do update set
   points = excluded.points,
   starts_on = excluded.starts_on,

@@ -140,10 +140,24 @@ export async function backfillCompletions(
     .getAll("challenge_ids")
     .map(String)
     .filter(Boolean);
+  const customPoints = challengeIds.map((challengeId) => {
+    const rawPoints = String(formData.get(`custom_points_${challengeId}`) ?? "").trim();
+    if (!rawPoints) return 0;
+    const points = Number(rawPoints);
+    return Number.isSafeInteger(points) && points > 0 && points <= 2_147_483_647
+      ? points
+      : Number.NaN;
+  });
 
   if (!participantId || !isDate(competitionDay) || challengeIds.length === 0) {
     return {
       message: "Choose a participant, past competition date, and at least one challenge.",
+      success: false,
+    };
+  }
+  if (customPoints.some((points) => Number.isNaN(points))) {
+    return {
+      message: "Custom points must be a positive whole number.",
       success: false,
     };
   }
@@ -160,11 +174,15 @@ export async function backfillCompletions(
     };
   }
 
-  const { data: insertedCount, error } = await supabase.rpc("admin_backfill_completions", {
-    p_user_id: participantId,
-    p_competition_day: competitionDay,
-    p_challenge_ids: challengeIds,
-  });
+  const { data: insertedCount, error } = await supabase.rpc(
+    "admin_backfill_completions_with_points",
+    {
+      p_user_id: participantId,
+      p_competition_day: competitionDay,
+      p_challenge_ids: challengeIds,
+      p_custom_points: customPoints,
+    },
+  );
 
   if (error) {
     if (error.code === "23505") {

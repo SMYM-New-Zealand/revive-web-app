@@ -443,7 +443,7 @@ function LateCompletionForm({
     <section className="rounded-2xl border border-white/[0.09] bg-[#1d211c] p-5 sm:p-6">
       <SectionHeading
         title="Add a late completion"
-        description="Record one or more challenges for a participant and a past competition day. If any selection conflicts with an existing daily or weekly completion, none of the entries will be added."
+        description="Record one or more challenges for a participant and a past competition day. For Historical Points, enter a custom total if needed; leave it blank to use the default. If any selection conflicts with an existing completion, none of the entries will be added."
       />
       <form action={action} className="mt-5 grid gap-4 sm:grid-cols-2">
         <label className="text-xs font-semibold text-white/55">
@@ -483,22 +483,39 @@ function LateCompletionForm({
           </legend>
           <div className="mt-2 divide-y divide-white/[0.07] rounded-xl border border-white/[0.07]">
             {availableChallenges.map((challenge) => (
-              <label
+              <div
                 key={challenge.id}
-                className="flex cursor-pointer items-center gap-3 px-4 py-3 text-sm text-white/75"
+                className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm text-white/75"
               >
-                <input
-                  type="checkbox"
-                  name="challenge_ids"
-                  value={challenge.id}
-                  className="size-4 accent-amber-300"
-                />
-                <span className="min-w-0 flex-1">{challenge.title}</span>
-                <span className="shrink-0 text-xs text-amber-200/65">
-                  {challenge.points} pts
-                  {challenge.once_per_week ? " · weekly" : ""}
-                </span>
-              </label>
+                <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
+                  <input
+                    type="checkbox"
+                    name="challenge_ids"
+                    value={challenge.id}
+                    className="size-4 accent-amber-300"
+                  />
+                  <span className="min-w-0 flex-1">{challenge.title}</span>
+                  <span className="shrink-0 text-xs text-amber-200/65">
+                    {challenge.points} pts
+                    {challenge.once_per_week ? " · weekly" : ""}
+                  </span>
+                </label>
+                {challenge.title === "Historical Points" && (
+                  <label className="flex items-center gap-2 text-xs text-white/50">
+                    Custom points
+                    <input
+                      type="number"
+                      name={`custom_points_${challenge.id}`}
+                      min="1"
+                      max="2147483647"
+                      step="1"
+                      placeholder={`Default: ${challenge.points}`}
+                      aria-label="Custom points for Historical Points"
+                      className="w-28 rounded-lg border border-white/10 bg-[#151813] px-2 py-2 text-sm text-white placeholder:text-white/30"
+                    />
+                  </label>
+                )}
+              </div>
             ))}
             {availableChallenges.length === 0 && (
               <p className="px-4 py-4 text-sm text-white/40">

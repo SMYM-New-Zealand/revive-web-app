@@ -120,6 +120,15 @@ export type Database = {
         };
         Returns: number;
       };
+      admin_backfill_completions_with_points: {
+        Args: {
+          p_user_id: string;
+          p_competition_day: string;
+          p_challenge_ids: string[];
+          p_custom_points: number[];
+        };
+        Returns: number;
+      };
       leaderboard_for_day: {
         Args: { p_competition_day: string };
         Returns: {
