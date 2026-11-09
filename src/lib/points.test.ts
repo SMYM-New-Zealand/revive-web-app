@@ -9,6 +9,7 @@ import {
   addCompetitionDays,
   competitionWeekStart,
   dateInTimeZone,
+  isTodayOrYesterday,
 } from "./dates";
 
 describe("points", () => {
@@ -39,6 +40,13 @@ describe("points", () => {
 
     it("calculates a previous competition day for admin backfills", () => {
       expect(addCompetitionDays("2026-11-05", -1)).toBe("2026-11-04");
+    });
+
+    it("allows only today and yesterday for participant logging", () => {
+      expect(isTodayOrYesterday("2026-11-05", "2026-11-05")).toBe(true);
+      expect(isTodayOrYesterday("2026-11-04", "2026-11-05")).toBe(true);
+      expect(isTodayOrYesterday("2026-11-03", "2026-11-05")).toBe(false);
+      expect(isTodayOrYesterday("2026-11-06", "2026-11-05")).toBe(false);
     });
 
     it("finds challenges already completed in the current competition week", () => {

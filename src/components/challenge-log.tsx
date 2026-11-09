@@ -3,6 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { saveChallengeSelection } from "@/app/actions";
+import {
+  competitionWeekStart,
+  formatCompetitionDate,
+} from "@/lib/dates";
+import {
+  calculatePointsForDay,
+  calculateTotalPoints,
+  getChallengeIdsCompletedInCompetitionWeek,
+} from "@/lib/points";
 
 type Challenge = {
   id: string;
@@ -10,6 +19,18 @@ type Challenge = {
   title: string;
   points: number;
   once_per_week: boolean;
+};
+
+type Completion = {
+  challenge_id: string;
+  competition_day: string;
+  points_awarded: number;
+};
+
+type AvailableDay = {
+  date: string;
+  label: string;
+  challenges: Challenge[];
 };
 
 const tiers: {
@@ -25,72 +46,65 @@ const tiers: {
 ];
 
 export function ChallengeLog({
-  challenges,
-  initialCompletedIds,
-  initialWeeklyCompletedIds,
-  todayPoints,
-  totalPoints,
-  dateLabel,
+  availableDays,
+  completions,
   today,
-  inCompetition,
+  competitionStart,
 }: {
-  challenges: Challenge[];
-  initialCompletedIds: string[];
-  initialWeeklyCompletedIds: string[];
-  todayPoints: number;
-  totalPoints: number;
-  dateLabel: string;
+  availableDays: AvailableDay[];
+  completions: Completion[];
   today: string;
-  inCompetition: boolean;
+  competitionStart: string;
 }) {
   const router = useRouter();
-  const [completedIds, setCompletedIds] = useState(() => new Set(initialCompletedIds));
-  const [weeklyCompletedIds, setWeeklyCompletedIds] = useState(
-    () => new Set(initialWeeklyCompletedIds),
+  const [selectedDay, setSelectedDay] = useState(
+    () => availableDays.find((day) => day.date === today)?.date ?? availableDays.at(-1)?.date ?? today,
   );
+  const [loggedCompletions, setLoggedCompletions] = useState(completions);
   const [selectedIds, setSelectedIds] = useState(() => new Set<string>());
-  const [todayScore, setTodayScore] = useState(todayPoints);
-  const [totalScore, setTotalScore] = useState(totalPoints);
   const [isSaving, setIsSaving] = useState(false);
   const pendingRef = useRef(false);
-  const displayedDayRef = useRef(today);
   const [notice, setNotice] = useState("");
 
+  const completionsKey = completions
+    .map(({ challenge_id, competition_day, points_awarded }) =>
+      `${challenge_id}:${competition_day}:${points_awarded}`,
+    )
+    .join(",");
   useEffect(() => {
-    if (displayedDayRef.current !== today) {
-      displayedDayRef.current = today;
-      setSelectedIds(new Set());
-      setNotice("");
-    }
-  }, [today]);
+    setLoggedCompletions(completions);
+  }, [completionsKey, completions]);
 
-  const completedKey = initialCompletedIds.join(",");
-  const weeklyCompletedKey = initialWeeklyCompletedIds.join(",");
-  useEffect(() => {
-    const savedIds = new Set(completedKey ? completedKey.split(",") : []);
-    const savedWeeklyIds = new Set(weeklyCompletedKey ? weeklyCompletedKey.split(",") : []);
-    setCompletedIds(savedIds);
-    setWeeklyCompletedIds(savedWeeklyIds);
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      for (const id of next) {
-        if (savedIds.has(id) || savedWeeklyIds.has(id)) next.delete(id);
-      }
-      return next;
-    });
-    setTodayScore(todayPoints);
-    setTotalScore(totalPoints);
-  }, [
-    completedKey,
-    totalPoints,
-    todayPoints,
-    weeklyCompletedKey,
-  ]);
+  const activeDay = availableDays.find((day) => day.date === selectedDay);
+  const challenges = activeDay?.challenges ?? [];
+  const completedIds = new Set(
+    loggedCompletions
+      .filter((completion) => completion.competition_day === selectedDay)
+      .map((completion) => completion.challenge_id),
+  );
+  const weeklyCompletedIds = new Set(
+    activeDay
+      ? getChallengeIdsCompletedInCompetitionWeek(
+          loggedCompletions,
+          competitionWeekStart(selectedDay, competitionStart),
+        )
+      : [],
+  );
+  const weeklyChallengeIds = new Set(
+    challenges.filter((challenge) => challenge.once_per_week).map(({ id }) => id),
+  );
+  const completedThisWeek = new Set(
+    [...weeklyCompletedIds].filter((challengeId) => weeklyChallengeIds.has(challengeId)),
+  );
+  const dayPoints = calculatePointsForDay(loggedCompletions, selectedDay);
+  const totalScore = calculateTotalPoints(loggedCompletions);
+  const dateLabel = activeDay?.label ?? formatCompetitionDate(selectedDay);
+  const dayName = selectedDay === today ? "today" : "yesterday";
 
   function handleSelect(challenge: Challenge) {
     if (
       completedIds.has(challenge.id) ||
-      weeklyCompletedIds.has(challenge.id) ||
+      completedThisWeek.has(challenge.id) ||
       isSaving
     ) return;
     setNotice("");
@@ -108,24 +122,24 @@ export function ChallengeLog({
     setIsSaving(true);
     setNotice("");
     const selected = challenges.filter((challenge) => selectedIds.has(challenge.id));
-    const points = selected.reduce((sum, challenge) => sum + challenge.points, 0);
 
     try {
-      const result = await saveChallengeSelection(selected.map(({ id }) => id));
+      const result = await saveChallengeSelection(
+        selected.map(({ id }) => id),
+        selectedDay,
+      );
       if (!result.ok) {
         setNotice(result.error ?? "Couldn’t save that challenge.");
         if (result.refresh) router.refresh();
       } else {
-        setCompletedIds((current) => new Set([...current, ...selected.map(({ id }) => id)]));
-        setWeeklyCompletedIds((current) => {
-          const next = new Set(current);
-          for (const challenge of selected) {
-            if (challenge.once_per_week) next.add(challenge.id);
-          }
-          return next;
-        });
-        setTodayScore((score) => score + points);
-        setTotalScore((score) => score + points);
+        setLoggedCompletions((current) => [
+          ...current,
+          ...selected.map((challenge) => ({
+            challenge_id: challenge.id,
+            competition_day: selectedDay,
+            points_awarded: challenge.points,
+          })),
+        ]);
         setSelectedIds(new Set());
         router.refresh();
       }
@@ -144,27 +158,51 @@ export function ChallengeLog({
   return (
     <div>
       <section className="mb-8 grid grid-cols-2 gap-3 sm:gap-4">
-        <ScoreCard label="Today’s points" value={todayScore} icon="✦" />
+        <ScoreCard label={`${dayName === "today" ? "Today’s" : "Yesterday’s"} points`} value={dayPoints} icon="✦" />
         <ScoreCard label="Total points" value={totalScore} icon="↗" />
       </section>
+
+      {availableDays.length > 1 && (
+        <div className="mb-6 flex gap-2" aria-label="Choose a competition day">
+          {availableDays.map((day) => (
+            <button
+              key={day.date}
+              type="button"
+              aria-pressed={selectedDay === day.date}
+              onClick={() => {
+                setSelectedDay(day.date);
+                setSelectedIds(new Set());
+                setNotice("");
+              }}
+              className={`min-h-10 rounded-full border px-4 text-sm font-semibold transition ${
+                selectedDay === day.date
+                  ? "border-amber-200/40 bg-amber-200/10 text-amber-100"
+                  : "border-white/10 bg-white/[0.04] text-white/55 hover:text-white/80"
+              }`}
+            >
+              {day.date === today ? "Today" : "Yesterday"}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="mb-7 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.23em] text-amber-300">
-            {inCompetition ? "Today’s challenge" : "Competition"}
+            {activeDay ? `${dayName[0].toUpperCase()}${dayName.slice(1)}’s challenge` : "Competition"}
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
             {dateLabel}
           </h1>
         </div>
         <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-white/55">
-          {completedIds.size} completed today
+          {completedIds.size} completed {dayName}
         </span>
       </div>
 
-      {!inCompetition && (
+      {!activeDay && (
         <div className="mb-6 rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] px-4 py-3 text-sm text-amber-100/80">
-          Today is outside the competition dates. Challenges cannot be logged.
+          Neither today nor yesterday is within the competition dates. Challenges cannot be logged.
         </div>
       )}
       {notice && (
@@ -223,14 +261,14 @@ export function ChallengeLog({
               <div className="grid gap-2 sm:grid-cols-2">
                 {items.map((challenge) => {
                   const completed = completedIds.has(challenge.id);
-                  const weeklyCompleted = weeklyCompletedIds.has(challenge.id);
+                  const weeklyCompleted = completedThisWeek.has(challenge.id);
                   const locked = completed || weeklyCompleted;
                   const selected = selectedIds.has(challenge.id);
                   return (
                     <button
                       key={challenge.id}
                       type="button"
-                      disabled={locked || isSaving || !inCompetition}
+                      disabled={locked || isSaving || !activeDay}
                       onClick={() => handleSelect(challenge)}
                       aria-pressed={locked || selected}
                       className={`group flex min-h-[72px] items-center gap-3 rounded-xl border p-4 text-left transition ${
@@ -259,7 +297,7 @@ export function ChallengeLog({
                         </span>
                         {locked ? (
                           <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wider text-emerald-200/65">
-                            {weeklyCompleted ? "Completed this week" : "Completed today"}
+                            {weeklyCompleted ? "Completed this week" : `Completed ${dayName}`}
                           </span>
                         ) : selected ? (
                           <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wider text-amber-200/70">
@@ -283,10 +321,10 @@ export function ChallengeLog({
         })}
       </div>
       <p className="mt-8 border-t border-white/[0.08] pt-5 text-center text-xs leading-5 text-white/40">
-        Selections stay editable until saved. Saved challenges lock for today,
+        Selections stay editable until saved. Saved challenges lock for the selected day,
         or for the competition week when marked weekly.
       </p>
-      <span className="sr-only">Competition day {today}</span>
+      <span className="sr-only">Competition day {selectedDay}</span>
     </div>
   );
 }

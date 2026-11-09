@@ -34,6 +34,10 @@ export function addCompetitionDays(date: string, days: number): string {
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
 }
 
+export function isTodayOrYesterday(date: string, today: string): boolean {
+  return date === today || date === addCompetitionDays(today, -1);
+}
+
 export function competitionWeekStart(
   competitionDay: string,
   competitionStart: string,
