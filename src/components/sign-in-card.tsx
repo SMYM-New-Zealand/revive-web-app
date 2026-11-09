@@ -52,7 +52,7 @@ export function SignInCard({
         </div>
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.28em] text-amber-300">
-            Starting anew
+            Soul
           </p>
           <p className="mt-1 text-sm text-white/50">Youth group challenge</p>
         </div>

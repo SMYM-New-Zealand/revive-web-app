@@ -29,7 +29,7 @@ export function AppShell({
             <span>
               <span className="block text-sm font-bold tracking-[0.12em]">REVIVE</span>
               <span className="hidden text-[10px] uppercase tracking-[0.2em] text-white/40 sm:block">
-                Starting anew
+                Soul
               </span>
             </span>
           </Link>
