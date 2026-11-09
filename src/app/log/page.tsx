@@ -32,8 +32,9 @@ export default async function LogPage() {
 
   const eligibleChallenges = (allChallenges ?? []).filter(
     (challenge) =>
-      challenge.target_gender === "unisex" ||
-      challenge.target_gender === participantGender,
+      challenge.title !== "Historical Points" &&
+      (challenge.target_gender === "unisex" ||
+        challenge.target_gender === participantGender),
   );
 
   const myCompletions = completions ?? [];
