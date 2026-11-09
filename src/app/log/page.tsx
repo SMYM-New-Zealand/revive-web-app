@@ -1,21 +1,17 @@
 import { AppShell } from "@/components/app-shell";
 import { ChallengeLog } from "@/components/challenge-log";
 import {
-  competitionWeekStart,
+  addCompetitionDays,
   dateInTimeZone,
   formatCompetitionDate,
   isAvailableOnDate,
 } from "@/lib/dates";
 import { requireParticipant } from "@/lib/auth";
-import {
-  calculatePointsForDay,
-  calculateTotalPoints,
-  getChallengeIdsCompletedInCompetitionWeek,
-} from "@/lib/points";
 
 export default async function LogPage() {
   const { supabase, user, profile, config, isAdmin } = await requireParticipant();
   const today = dateInTimeZone(new Date(), config.timezone);
+  const yesterday = addCompetitionDays(today, -1);
 
   const [{ data: allChallenges, error: challengeError }, { data: completions, error: completionError }] =
     await Promise.all([
@@ -30,26 +26,15 @@ export default async function LogPage() {
   if (completionError) throw new Error(`Could not load your points: ${completionError.message}`);
 
   const myCompletions = completions ?? [];
-  const inCompetition = today >= config.starts_on && today <= config.ends_on;
-  const challenges = (allChallenges ?? []).filter(
-    (challenge) =>
-      inCompetition && isAvailableOnDate(challenge.starts_on, challenge.ends_on, today),
-  );
-  const completedToday = myCompletions.filter(
-    (completion) => completion.competition_day === today,
-  );
-  const weeklyChallengeIds = new Set(
-    (allChallenges ?? [])
-      .filter((challenge) => challenge.once_per_week)
-      .map((challenge) => challenge.id),
-  );
-  const weeklyCompletedIds = getChallengeIdsCompletedInCompetitionWeek(
-    myCompletions,
-    competitionWeekStart(
-      today < config.starts_on ? config.starts_on : today,
-      config.starts_on,
-    ),
-  ).filter((challengeId) => weeklyChallengeIds.has(challengeId));
+  const availableDays = [yesterday, today]
+    .filter((day) => day >= config.starts_on && day <= config.ends_on)
+    .map((day) => ({
+      date: day,
+      label: formatCompetitionDate(day),
+      challenges: (allChallenges ?? []).filter((challenge) =>
+        isAvailableOnDate(challenge.starts_on, challenge.ends_on, day),
+      ),
+    }));
 
   return (
     <AppShell active="log" displayName={profile.display_name} isAdmin={isAdmin}>
@@ -59,14 +44,10 @@ export default async function LogPage() {
           {config.name} · {config.starts_on} — {config.ends_on}
         </div>
         <ChallengeLog
-          challenges={challenges}
-          initialCompletedIds={completedToday.map((completion) => completion.challenge_id)}
-          initialWeeklyCompletedIds={weeklyCompletedIds}
-          todayPoints={calculatePointsForDay(myCompletions, today)}
-          totalPoints={calculateTotalPoints(myCompletions)}
-          dateLabel={formatCompetitionDate(today)}
+          availableDays={availableDays}
+          completions={myCompletions}
           today={today}
-          inCompetition={inCompetition}
+          competitionStart={config.starts_on}
         />
       </div>
     </AppShell>

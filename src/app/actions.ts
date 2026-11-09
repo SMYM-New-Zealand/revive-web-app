@@ -2,7 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { dateInTimeZone, isAvailableOnDate } from "@/lib/dates";
+import {
+  dateInTimeZone,
+  isAvailableOnDate,
+  isTodayOrYesterday,
+} from "@/lib/dates";
 import { requireParticipant } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
@@ -24,11 +28,16 @@ export type CompletionActionResult = {
 
 export async function saveChallengeSelection(
   challengeIds: string[],
+  competitionDay: string,
 ): Promise<CompletionActionResult> {
   const { supabase, user, config } = await requireParticipant();
   const today = dateInTimeZone(new Date(), config.timezone);
-  if (today < config.starts_on || today > config.ends_on) {
-    return { ok: false, error: "Today is outside the competition dates." };
+  if (
+    !isTodayOrYesterday(competitionDay, today) ||
+    competitionDay < config.starts_on ||
+    competitionDay > config.ends_on
+  ) {
+    return { ok: false, error: "Choose today or yesterday within the competition dates." };
   }
   const uniqueChallengeIds = [...new Set(challengeIds)];
   if (
@@ -53,17 +62,20 @@ export async function saveChallengeSelection(
     challenges.some(
       (challenge) =>
         !challenge.active ||
-        !isAvailableOnDate(challenge.starts_on, challenge.ends_on, today),
+        !isAvailableOnDate(challenge.starts_on, challenge.ends_on, competitionDay),
     )
   ) {
-    return { ok: false, error: "One or more selected challenges aren’t available today." };
+    return {
+      ok: false,
+      error: "One or more selected challenges aren’t available on that date.",
+    };
   }
 
   const { error } = await supabase.from("completions").insert(
     challenges.map((challenge) => ({
       user_id: user.id,
       challenge_id: challenge.id,
-      competition_day: today,
+      competition_day: competitionDay,
       points_awarded: challenge.points,
     })),
   );
@@ -73,14 +85,14 @@ export async function saveChallengeSelection(
       return {
         ok: false,
         error:
-          "At least one selected challenge is already saved today or has reached its weekly limit. Review your selection and try again.",
+          "At least one selected challenge is already saved for that date or has reached its weekly limit. Review your selection and try again.",
         refresh: true,
       };
     }
     if (error.code === "23514") {
       return {
         ok: false,
-        error: "These challenges can’t be saved for today. Refresh and try again.",
+        error: "These challenges can’t be saved for that date. Refresh and try again.",
       };
     }
     console.error("Challenge selection save failed:", error.message);
