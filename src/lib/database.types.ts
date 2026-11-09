@@ -28,6 +28,7 @@ export type Database = {
         {
           id: string;
           tier: "novice" | "challenger" | "elite" | "bonus";
+          target_gender: "male" | "female" | "unisex";
           title: string;
           points: number;
           starts_on: string | null;
@@ -39,6 +40,7 @@ export type Database = {
         {
           id?: string;
           tier: "novice" | "challenger" | "elite" | "bonus";
+          target_gender?: "male" | "female" | "unisex";
           title: string;
           points: number;
           starts_on?: string | null;

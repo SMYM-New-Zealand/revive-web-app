@@ -49,7 +49,7 @@ export async function saveChallengeSelection(
 
   const { data: challenges, error: challengeError } = await supabase
     .from("challenges")
-    .select("id, points, active, starts_on, ends_on")
+    .select("id, points, active, starts_on, ends_on, target_gender")
     .in("id", uniqueChallengeIds);
 
   if (challengeError) {
@@ -68,6 +68,26 @@ export async function saveChallengeSelection(
     return {
       ok: false,
       error: "One or more selected challenges aren’t available on that date.",
+    };
+  }
+  const { data: participantGender, error: genderError } = await supabase.rpc(
+    "current_user_gender",
+    {},
+  );
+  if (genderError) {
+    console.error("Challenge gender check failed:", genderError.message);
+    return { ok: false, error: "Couldn’t verify challenge access. Please refresh and try again." };
+  }
+  if (
+    challenges.some(
+      (challenge) =>
+        challenge.target_gender !== "unisex" &&
+        challenge.target_gender !== participantGender,
+    )
+  ) {
+    return {
+      ok: false,
+      error: "One or more selected challenges aren’t available for your participant profile.",
     };
   }
 
@@ -215,14 +235,24 @@ export async function addChallenge(
 ): Promise<AdminActionState> {
   const { supabase } = await requireAdmin();
   const tier = String(formData.get("tier") ?? "");
+  const targetGender = String(formData.get("target_gender") ?? "");
   const title = String(formData.get("title") ?? "").trim();
   const points = Number(formData.get("points"));
   const startsOn = String(formData.get("starts_on") ?? "") || null;
   const endsOn = String(formData.get("ends_on") ?? "") || null;
   const oncePerWeek = formData.get("once_per_week") === "on";
 
-  if (!isChallengeTier(tier) || !title || !Number.isInteger(points) || points <= 0) {
-    return { message: "Enter a tier, title, and positive whole-number points.", success: false };
+  if (
+    !isChallengeTier(tier) ||
+    !isChallengeGender(targetGender) ||
+    !title ||
+    !Number.isInteger(points) ||
+    points <= 0
+  ) {
+    return {
+      message: "Enter a tier, gender, title, and positive whole-number points.",
+      success: false,
+    };
   }
   if (
     (startsOn && !isDate(startsOn)) ||
@@ -234,6 +264,7 @@ export async function addChallenge(
 
   const { error } = await supabase.from("challenges").insert({
     tier,
+    target_gender: targetGender,
     title,
     points,
     starts_on: startsOn,
@@ -242,7 +273,10 @@ export async function addChallenge(
   });
   if (error) {
     if (error.code === "23505") {
-      return { message: "A challenge with that title already exists in this tier.", success: false };
+      return {
+        message: "A challenge with that title already exists in this tier for that gender.",
+        success: false,
+      };
     }
     console.error("Admin challenge creation failed:", error.message);
     return { message: "Could not add that challenge. Please try again.", success: false };
@@ -250,6 +284,12 @@ export async function addChallenge(
   revalidatePath("/admin");
   revalidatePath("/log");
   return { message: "Challenge added.", success: true };
+}
+
+function isChallengeGender(
+  gender: string,
+): gender is "male" | "female" | "unisex" {
+  return gender === "male" || gender === "female" || gender === "unisex";
 }
 
 export async function deactivateChallenge(

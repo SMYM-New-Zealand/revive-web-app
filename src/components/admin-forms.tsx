@@ -18,6 +18,7 @@ const emptyAdminState: AdminActionState = { message: "", success: false };
 type Challenge = {
   id: string;
   tier: string;
+  target_gender: "male" | "female" | "unisex";
   title: string;
   points: number;
   active: boolean;
@@ -27,7 +28,12 @@ type Challenge = {
 };
 
 type AllowedEmail = { email: string; is_admin: boolean };
-type Participant = { id: string; display_name: string; email: string };
+type Participant = {
+  id: string;
+  display_name: string;
+  email: string;
+  gender: "male" | "female" | null;
+};
 
 export function AdminForms({
   challenges,
@@ -119,6 +125,19 @@ export function AdminForms({
               defaultValue="10"
               className="mt-2 w-full rounded-xl border border-white/10 bg-[#151813] px-3 py-3 text-sm text-white"
             />
+          </label>
+          <label className="text-xs font-semibold text-white/55">
+            Challenge for
+            <select
+              name="target_gender"
+              required
+              defaultValue="unisex"
+              className="mt-2 w-full rounded-xl border border-white/10 bg-[#151813] px-3 py-3 text-sm text-white"
+            >
+              <option value="male">Male participants</option>
+              <option value="female">Female participants</option>
+              <option value="unisex">Everyone (unisex)</option>
+            </select>
           </label>
           <label className="text-xs font-semibold text-white/55 sm:col-span-2">
             Challenge title
@@ -324,7 +343,7 @@ function ChallengeRow({ challenge }: { challenge: Challenge }) {
           {challenge.title}
         </p>
         <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-amber-200/60">
-          {challenge.tier} · {challenge.points} points
+          {challenge.tier} · {challenge.points} points · {challenge.target_gender}
           {" · "}{challenge.active ? "active" : "inactive"}
         </p>
       </div>
@@ -404,10 +423,17 @@ function LateCompletionForm({
     emptyAdminState,
   );
   const [selectedDate, setSelectedDate] = useState(maxBackfillDate);
+  const [selectedParticipantId, setSelectedParticipantId] = useState("");
   const canBackfill = maxBackfillDate >= competitionStartsOn;
+  const selectedParticipant = participants.find(
+    (participant) => participant.id === selectedParticipantId,
+  );
   const availableChallenges = challenges.filter(
     (challenge) =>
       challenge.active &&
+      selectedParticipant &&
+      (challenge.target_gender === "unisex" ||
+        challenge.target_gender === selectedParticipant.gender) &&
       selectedDate >= competitionStartsOn &&
       (!challenge.starts_on || selectedDate >= challenge.starts_on) &&
       (!challenge.ends_on || selectedDate <= challenge.ends_on),
@@ -425,13 +451,14 @@ function LateCompletionForm({
           <select
             required
             name="user_id"
-            defaultValue=""
+            value={selectedParticipantId}
+            onChange={(event) => setSelectedParticipantId(event.target.value)}
             className="mt-2 w-full rounded-xl border border-white/10 bg-[#151813] px-3 py-3 text-sm text-white"
           >
             <option value="" disabled>Select participant</option>
             {participants.map((participant) => (
               <option key={participant.id} value={participant.id}>
-                {participant.display_name} ({participant.email})
+                {participant.display_name} ({participant.gender ?? "gender not set"} · {participant.email})
               </option>
             ))}
           </select>
@@ -475,7 +502,9 @@ function LateCompletionForm({
             ))}
             {availableChallenges.length === 0 && (
               <p className="px-4 py-4 text-sm text-white/40">
-                {canBackfill
+                {!selectedParticipant
+                  ? "Select a participant to see eligible challenges."
+                  : canBackfill
                   ? "No active challenges are available on this date."
                   : "There are no past competition days available to backfill."}
               </p>
@@ -484,7 +513,12 @@ function LateCompletionForm({
         </fieldset>
         <div className="flex flex-wrap items-center gap-4 sm:col-span-2">
           <button
-            disabled={pending || !canBackfill || availableChallenges.length === 0}
+            disabled={
+              pending ||
+              !canBackfill ||
+              !selectedParticipant ||
+              availableChallenges.length === 0
+            }
             className="shrink-0 rounded-full bg-amber-300 px-5 py-3 text-xs font-bold text-[#211b0d] transition hover:bg-amber-200 disabled:opacity-60"
           >
             {pending ? "Adding…" : "Add late completions"}
