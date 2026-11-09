@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Revive — Starting Anew",
+  title: "Revive — Soul",
   description: "Track your daily points and follow your youth group leaderboard.",
 };
 
