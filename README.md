@@ -131,6 +131,9 @@ JavaScript origins. Apply any new migrations with `supabase db push --remote`.
   limit, none of the selected completions are added.
 - Admins can configure whether each challenge is limited to once per
   competition week when creating or managing a challenge.
+- Admins can target each challenge to male participants, female participants,
+  or everyone. Participants without a gender set can access unisex challenges
+  only; completion rules also enforce the selected audience for admin backfills.
 - Users can read the leaderboard and profiles, but completion rows are readable
   only by their owners. A public Realtime broadcast emits only a generic refresh
   notification after an insert; the leaderboard then reloads through its
