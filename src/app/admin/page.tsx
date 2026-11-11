@@ -51,6 +51,7 @@ export default async function AdminPage() {
           }))}
           startsOn={config.starts_on}
           endsOn={config.ends_on}
+          today={latestCompetitionDay}
           maxBackfillDate={maxBackfillDate}
         />
       </div>
