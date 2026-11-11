@@ -129,6 +129,63 @@ export type AdminActionState = {
   success: boolean;
 };
 
+export type ParticipantDayCompletion = {
+  challengeId: string;
+  title: string;
+  points: number;
+};
+
+export type ParticipantDayCompletionsResult =
+  | { success: true; completions: ParticipantDayCompletion[] }
+  | { success: false; message: string };
+
+export async function loadParticipantDayCompletions(
+  participantId: string,
+  competitionDay: string,
+): Promise<ParticipantDayCompletionsResult> {
+  const { supabase, config } = await requireAdmin();
+  if (
+    !participantId ||
+    !isDate(competitionDay) ||
+    competitionDay < config.starts_on ||
+    competitionDay > config.ends_on
+  ) {
+    return { success: false, message: "Choose a participant and a day within the competition dates." };
+  }
+
+  const { data: completions, error: completionError } = await supabase
+    .from("completions")
+    .select("challenge_id, points_awarded")
+    .eq("user_id", participantId)
+    .eq("competition_day", competitionDay);
+  if (completionError) {
+    console.error("Participant day completions lookup failed:", completionError.message);
+    return { success: false, message: "Could not load completions for that day. Please try again." };
+  }
+
+  const challengeIds = [...new Set((completions ?? []).map(({ challenge_id }) => challenge_id))];
+  if (challengeIds.length === 0) return { success: true, completions: [] };
+
+  const { data: challenges, error: challengeError } = await supabase
+    .from("challenges")
+    .select("id, title")
+    .in("id", challengeIds);
+  if (challengeError) {
+    console.error("Participant day challenge lookup failed:", challengeError.message);
+    return { success: false, message: "Could not load challenge details for that day. Please try again." };
+  }
+
+  const titles = new Map((challenges ?? []).map(({ id, title }) => [id, title]));
+  return {
+    success: true,
+    completions: (completions ?? []).map(({ challenge_id, points_awarded }) => ({
+      challengeId: challenge_id,
+      title: titles.get(challenge_id) ?? "Challenge",
+      points: points_awarded,
+    })),
+  };
+}
+
 export async function backfillCompletions(
   _previousState: AdminActionState,
   formData: FormData,

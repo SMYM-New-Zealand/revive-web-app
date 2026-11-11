@@ -1,16 +1,18 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   addAllowedEmail,
   addChallenge,
   backfillCompletions,
+  loadParticipantDayCompletions,
   promoteAllowedEmails,
   setChallengeActive,
   setChallengeWeeklyLimit,
   updateCompetition,
   type AdminActionState,
+  type ParticipantDayCompletion,
 } from "@/app/actions";
 
 const emptyAdminState: AdminActionState = { message: "", success: false };
@@ -41,6 +43,7 @@ export function AdminForms({
   participants,
   startsOn,
   endsOn,
+  today,
   maxBackfillDate,
 }: {
   challenges: Challenge[];
@@ -48,6 +51,7 @@ export function AdminForms({
   participants: Participant[];
   startsOn: string;
   endsOn: string;
+  today: string;
   maxBackfillDate: string;
 }) {
   const [challengeState, challengeAction, addingChallenge] = useActionState(
@@ -186,6 +190,12 @@ export function AdminForms({
         participants={participants}
         competitionStartsOn={startsOn}
         maxBackfillDate={maxBackfillDate}
+      />
+      <ParticipantDayCompletions
+        participants={participants}
+        startsOn={startsOn}
+        endsOn={endsOn}
+        initialDate={today}
       />
 
       <section className="rounded-2xl border border-white/[0.09] bg-[#1d211c] p-5 sm:p-6">
@@ -581,6 +591,120 @@ function LateCompletionForm({
           <ActionMessage state={state} />
         </div>
       </form>
+    </section>
+  );
+}
+
+function ParticipantDayCompletions({
+  participants,
+  startsOn,
+  endsOn,
+  initialDate,
+}: {
+  participants: Participant[];
+  startsOn: string;
+  endsOn: string;
+  initialDate: string;
+}) {
+  const [participantId, setParticipantId] = useState("");
+  const [competitionDay, setCompetitionDay] = useState(initialDate);
+  const [completions, setCompletions] = useState<ParticipantDayCompletion[] | null>(null);
+  const [message, setMessage] = useState("");
+  const [isPending, startTransition] = useTransition();
+
+  function loadCompletions(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setCompletions(null);
+    setMessage("");
+    startTransition(async () => {
+      const result = await loadParticipantDayCompletions(participantId, competitionDay);
+      if (!result.success) {
+        setMessage(result.message);
+        return;
+      }
+      setCompletions(result.completions);
+    });
+  }
+
+  const totalPoints = completions?.reduce((total, completion) => total + completion.points, 0) ?? 0;
+
+  return (
+    <section className="rounded-2xl border border-white/[0.09] bg-[#1d211c] p-5 sm:p-6">
+      <SectionHeading
+        title="Participant day completions"
+        description="Review the challenges a participant completed on a competition day and their total points."
+      />
+      <form onSubmit={loadCompletions} className="mt-5 grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+        <label className="text-xs font-semibold text-white/55">
+          Participant
+          <select
+            required
+            value={participantId}
+            onChange={(event) => {
+              setParticipantId(event.target.value);
+              setCompletions(null);
+              setMessage("");
+            }}
+            className="mt-2 w-full rounded-xl border border-white/10 bg-[#151813] px-3 py-3 text-sm text-white"
+          >
+            <option value="" disabled>Select participant</option>
+            {participants.map((participant) => (
+              <option key={participant.id} value={participant.id}>
+                {participant.display_name} ({participant.email})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs font-semibold text-white/55">
+          Competition day
+          <input
+            required
+            type="date"
+            min={startsOn}
+            max={endsOn}
+            value={competitionDay}
+            onChange={(event) => {
+              setCompetitionDay(event.target.value);
+              setCompletions(null);
+              setMessage("");
+            }}
+            className="mt-2 w-full rounded-xl border border-white/10 bg-[#151813] px-3 py-3 text-sm text-white"
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={isPending || !participantId || !competitionDay}
+          className="shrink-0 rounded-full bg-amber-300 px-5 py-3 text-xs font-bold text-[#211b0d] transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isPending ? "Loading…" : "View completions"}
+        </button>
+      </form>
+      {message && <p role="alert" className="mt-4 text-sm text-rose-200/80">{message}</p>}
+      {completions !== null && (
+        <div className="mt-5">
+          <p className="mb-3 text-sm font-semibold text-amber-200">
+            Total: {totalPoints} points
+          </p>
+          <div className="max-h-64 divide-y divide-white/[0.07] overflow-y-auto rounded-xl border border-white/[0.07]">
+            {completions.map((completion) => (
+              <div
+                key={completion.challengeId}
+                className="flex items-center justify-between gap-4 px-4 py-3"
+              >
+                <p className="min-w-0 text-sm text-white/75">{completion.title}</p>
+                <span className="shrink-0 text-xs font-semibold text-amber-200/70">
+                  {completion.points} pts
+                </span>
+              </div>
+            ))}
+            {completions.length === 0 && (
+              <p className="px-4 py-5 text-sm text-white/40">
+                No challenges completed on this day.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
