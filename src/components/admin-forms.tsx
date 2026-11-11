@@ -1,13 +1,13 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   addAllowedEmail,
   addChallenge,
   backfillCompletions,
-  deactivateChallenge,
   promoteAllowedEmails,
-  reactivateChallenge,
+  setChallengeActive,
   setChallengeWeeklyLimit,
   updateCompetition,
   type AdminActionState,
@@ -66,6 +66,7 @@ export function AdminForms({
     updateCompetition,
     emptyAdminState,
   );
+  const [activeRubricTab, setActiveRubricTab] = useState<"active" | "inactive">("active");
 
   return (
     <div className="space-y-5">
@@ -215,11 +216,62 @@ export function AdminForms({
       </section>
 
       <section className="rounded-2xl border border-white/[0.09] bg-[#1d211c] p-5 sm:p-6">
-        <SectionHeading title="Challenge rubric" description="Deactivated items are hidden from participants but kept for historical points." />
-        <div className="mt-5 divide-y divide-white/[0.07] rounded-xl border border-white/[0.07]">
-          {challenges.map((challenge) => (
-            <ChallengeRow key={challenge.id} challenge={challenge} />
+        <SectionHeading
+          title="Challenge rubric"
+          description="Manage active challenges and review items removed from the participant log."
+        />
+        <div
+          role="tablist"
+          aria-label="Challenge rubric status"
+          className="mt-5 flex gap-2 border-b border-white/[0.08]"
+        >
+          {([
+            ["active", "Active", challenges.filter((challenge) => challenge.active).length],
+            ["inactive", "Deactivated", challenges.filter((challenge) => !challenge.active).length],
+          ] as const).map(([tab, label, count]) => (
+            <button
+              key={tab}
+              id={`challenge-rubric-${tab}-tab`}
+              type="button"
+              role="tab"
+              aria-selected={activeRubricTab === tab}
+              aria-controls={`challenge-rubric-${tab}-panel`}
+              onClick={() => setActiveRubricTab(tab)}
+              className={`-mb-px min-h-11 border-b-2 px-3 text-sm font-semibold transition ${
+                activeRubricTab === tab
+                  ? "border-amber-300 text-amber-200"
+                  : "border-transparent text-white/45 hover:text-white/75"
+              }`}
+            >
+              {label}
+              <span className="ml-2 text-xs text-white/40">{count}</span>
+            </button>
           ))}
+        </div>
+        <div
+          role="tabpanel"
+          id={`challenge-rubric-${activeRubricTab}-panel`}
+          aria-labelledby={`challenge-rubric-${activeRubricTab}-tab`}
+          className="mt-4"
+        >
+          <div className="divide-y divide-white/[0.07] rounded-xl border border-white/[0.07]">
+            {challenges
+              .filter((challenge) =>
+                activeRubricTab === "active" ? challenge.active : !challenge.active,
+              )
+              .map((challenge) => (
+                <ChallengeRow key={challenge.id} challenge={challenge} />
+              ))}
+            {challenges.every((challenge) =>
+              activeRubricTab === "active" ? !challenge.active : challenge.active,
+            ) && (
+              <p className="px-4 py-5 text-sm text-white/40">
+                {activeRubricTab === "active"
+                  ? "No active challenges."
+                  : "No deactivated challenges."}
+              </p>
+            )}
+          </div>
         </div>
       </section>
     </div>
@@ -324,18 +376,17 @@ function AllowedEmailPromotionForm({
 }
 
 function ChallengeRow({ challenge }: { challenge: Challenge }) {
-  const [state, action, pending] = useActionState(
-    deactivateChallenge,
-    emptyAdminState,
-  );
-  const [reactivateState, reactivateAction, reactivating] = useActionState(
-    reactivateChallenge,
-    emptyAdminState,
-  );
+  const router = useRouter();
+  const [state, action, pending] = useActionState(setChallengeActive, emptyAdminState);
   const [weeklyState, weeklyAction, updatingWeekly] = useActionState(
     setChallengeWeeklyLimit,
     emptyAdminState,
   );
+
+  useEffect(() => {
+    if (state.success) router.refresh();
+  }, [router, state]);
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
       <div className="min-w-0 flex-1">
@@ -347,41 +398,36 @@ function ChallengeRow({ challenge }: { challenge: Challenge }) {
           {" · "}{challenge.active ? "active" : "inactive"}
         </p>
       </div>
-      <form action={weeklyAction} className="flex items-center gap-2">
-        <input type="hidden" name="challenge_id" value={challenge.id} />
-        <label className="flex cursor-pointer items-center gap-2 text-[10px] font-semibold text-white/55">
-          <input
-            type="checkbox"
-            name="once_per_week"
-            defaultChecked={challenge.once_per_week}
-            disabled={updatingWeekly}
-            onChange={(event) => event.currentTarget.form?.requestSubmit()}
-            className="size-4 accent-amber-300"
-          />
-          Weekly
-        </label>
-      </form>
-      {challenge.active ? (
-        <form action={action}>
+      {challenge.active && (
+        <form action={weeklyAction} className="flex items-center gap-2">
           <input type="hidden" name="challenge_id" value={challenge.id} />
-          <button
-            disabled={pending}
-            className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-white/55 hover:border-rose-200/30 hover:text-rose-100 disabled:opacity-50"
-          >
-            {pending ? "Saving…" : "Deactivate"}
-          </button>
-        </form>
-      ) : (
-        <form action={reactivateAction}>
-          <input type="hidden" name="challenge_id" value={challenge.id} />
-          <button
-            disabled={reactivating}
-            className="rounded-full border border-emerald-200/20 px-3 py-2 text-xs font-semibold text-emerald-100/70 hover:border-emerald-200/40 hover:text-emerald-100 disabled:opacity-50"
-          >
-            {reactivating ? "Saving…" : "Reactivate"}
-          </button>
+          <label className="flex cursor-pointer items-center gap-2 text-[10px] font-semibold text-white/55">
+            <input
+              type="checkbox"
+              name="once_per_week"
+              defaultChecked={challenge.once_per_week}
+              disabled={updatingWeekly}
+              onChange={(event) => event.currentTarget.form?.requestSubmit()}
+              className="size-4 accent-amber-300"
+            />
+            Weekly
+          </label>
         </form>
       )}
+      <form action={action}>
+        <input type="hidden" name="challenge_id" value={challenge.id} />
+        <input type="hidden" name="active" value={String(!challenge.active)} />
+        <button
+          disabled={pending}
+          className={`rounded-full border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
+            challenge.active
+              ? "border-white/10 text-white/55 hover:border-rose-200/30 hover:text-rose-100"
+              : "border-emerald-200/20 text-emerald-100/70 hover:border-emerald-200/40 hover:text-emerald-100"
+          }`}
+        >
+          {pending ? "Saving…" : challenge.active ? "Deactivate" : "Reactivate"}
+        </button>
+      </form>
       {state.message && (
         <span role={state.success ? "status" : "alert"} className="w-full text-xs text-white/55">
           {state.message}
@@ -393,14 +439,6 @@ function ChallengeRow({ challenge }: { challenge: Challenge }) {
           className="w-full text-xs text-white/55"
         >
           {weeklyState.message}
-        </span>
-      )}
-      {reactivateState.message && (
-        <span
-          role={reactivateState.success ? "status" : "alert"}
-          className="w-full text-xs text-white/55"
-        >
-          {reactivateState.message}
         </span>
       )}
     </div>
