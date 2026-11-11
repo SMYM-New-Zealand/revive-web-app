@@ -271,7 +271,7 @@ function AllowedEmailPromotionForm({
           </label>
         )}
       </div>
-      <div className="divide-y divide-white/[0.07] rounded-xl border border-white/[0.07]">
+      <div className="max-h-80 overflow-y-auto divide-y divide-white/[0.07] rounded-xl border border-white/[0.07]">
         {allowedEmails.map((entry) => (
           <label
             key={entry.email}

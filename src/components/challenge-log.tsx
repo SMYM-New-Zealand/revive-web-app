@@ -42,7 +42,7 @@ const tiers: {
   { key: "novice", name: "Novice", points: 10, description: "Small steps, steady habits" },
   { key: "challenger", name: "Challenger", points: 25, description: "Stretch yourself a little" },
   { key: "elite", name: "Elite", points: 50, description: "Go further, grow stronger" },
-  { key: "bonus", name: "Bonus", points: 100, description: "Special challenges" },
+  { key: "bonus", name: "Bonus", points: 100, description: "Special challenges | Please note some bonus challenges are available only once per week" },
 ];
 
 export function ChallengeLog({
