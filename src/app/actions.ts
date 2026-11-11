@@ -310,49 +310,41 @@ function isChallengeGender(
   return gender === "male" || gender === "female" || gender === "unisex";
 }
 
-export async function deactivateChallenge(
+export async function setChallengeActive(
   _previousState: AdminActionState,
   formData: FormData,
 ): Promise<AdminActionState> {
   const { supabase } = await requireAdmin();
   const id = String(formData.get("challenge_id") ?? "");
-  if (!id) return { message: "Choose a challenge to deactivate.", success: false };
-  const { error } = await supabase
-    .from("challenges")
-    .update({ active: false })
-    .eq("id", id);
-  if (error) {
-    console.error("Admin challenge deactivation failed:", error.message);
-    return { message: "Could not deactivate that challenge.", success: false };
+  const active = formData.get("active") === "true";
+  if (!id) {
+    return {
+      message: `Choose a challenge to ${active ? "activate" : "deactivate"}.`,
+      success: false,
+    };
   }
-  revalidatePath("/admin");
-  revalidatePath("/log");
-  return { message: "Challenge deactivated.", success: true };
-}
-
-export async function reactivateChallenge(
-  _previousState: AdminActionState,
-  formData: FormData,
-): Promise<AdminActionState> {
-  const { supabase } = await requireAdmin();
-  const id = String(formData.get("challenge_id") ?? "");
-  if (!id) return { message: "Choose a challenge to reactivate.", success: false };
 
   const { data, error } = await supabase
     .from("challenges")
-    .update({ active: true })
+    .update({ active })
     .eq("id", id)
     .select("id")
     .maybeSingle();
   if (error) {
-    console.error("Admin challenge reactivation failed:", error.message);
-    return { message: "Could not reactivate that challenge.", success: false };
+    console.error("Admin challenge status update failed:", error.message);
+    return {
+      message: `Could not ${active ? "activate" : "deactivate"} that challenge.`,
+      success: false,
+    };
   }
   if (!data) return { message: "That challenge could not be found.", success: false };
 
   revalidatePath("/admin");
   revalidatePath("/log");
-  return { message: "Challenge reactivated.", success: true };
+  return {
+    message: `Challenge ${active ? "activated" : "deactivated"}.`,
+    success: true,
+  };
 }
 
 export async function setChallengeWeeklyLimit(
