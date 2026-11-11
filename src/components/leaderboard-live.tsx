@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { paginateItems } from "@/lib/leaderboard";
 
 type LeaderboardRow = {
   rank: number;
@@ -84,29 +85,65 @@ export function LeaderboardLive({
       ) : (
         <div className="space-y-6">
           {genderGroups.map((group) => (
-            <section key={group.gender} aria-labelledby={`${group.gender}-leaderboard`}>
-              {isAdmin && (
-                <h2
-                  id={`${group.gender}-leaderboard`}
-                  className="mb-3 text-sm font-bold uppercase tracking-[0.2em] text-amber-200"
-                >
-                  {group.gender} leaderboard
-                </h2>
-              )}
-              <div className="overflow-hidden rounded-2xl border border-white/[0.09] bg-[#1d211c]">
-                <div className="grid grid-cols-[48px_minmax(0,1fr)_70px_78px] gap-2 border-b border-white/[0.08] bg-white/[0.025] px-4 py-3 text-[10px] font-bold uppercase tracking-[0.16em] text-white/40 sm:grid-cols-[64px_minmax(0,1fr)_100px_110px] sm:px-6">
-                  <span>Rank</span>
-                  <span>Participant</span>
-                  <span className="text-right">Today</span>
-                  <span className="text-right">Total</span>
-                </div>
-                {group.rows.length === 0 ? (
-                  <p className="px-5 py-8 text-center text-sm text-white/45">
-                    No participants in this leaderboard yet.
-                  </p>
-                ) : (
-                  <ol>
-                    {group.rows.map((row) => {
+            <LeaderboardGroup
+              key={group.gender}
+              gender={group.gender}
+              rows={group.rows}
+              currentUserId={currentUserId}
+              showHeading={isAdmin}
+            />
+          ))}
+        </div>
+      )}
+      <p className="mt-4 text-center text-xs text-white/35">
+        Tied scores share the same rank within each gender leaderboard.
+      </p>
+    </>
+  );
+}
+
+function LeaderboardGroup({
+  gender,
+  rows,
+  currentUserId,
+  showHeading,
+}: {
+  gender: "male" | "female" | null;
+  rows: LeaderboardRow[];
+  currentUserId: string;
+  showHeading: boolean;
+}) {
+  const [page, setPage] = useState(1);
+  const pageData = paginateItems(rows, page);
+
+  useEffect(() => {
+    if (page !== pageData.page) setPage(pageData.page);
+  }, [page, pageData.page]);
+
+  return (
+    <section aria-labelledby={showHeading ? `${gender}-leaderboard` : undefined}>
+      {showHeading && (
+        <h2
+          id={`${gender}-leaderboard`}
+          className="mb-3 text-sm font-bold uppercase tracking-[0.2em] text-amber-200"
+        >
+          {gender} leaderboard
+        </h2>
+      )}
+      <div className="overflow-hidden rounded-2xl border border-white/[0.09] bg-[#1d211c]">
+        <div className="grid grid-cols-[48px_minmax(0,1fr)_70px_78px] gap-2 border-b border-white/[0.08] bg-white/[0.025] px-4 py-3 text-[10px] font-bold uppercase tracking-[0.16em] text-white/40 sm:grid-cols-[64px_minmax(0,1fr)_100px_110px] sm:px-6">
+          <span>Rank</span>
+          <span>Participant</span>
+          <span className="text-right">Today</span>
+          <span className="text-right">Total</span>
+        </div>
+        {rows.length === 0 ? (
+          <p className="px-5 py-8 text-center text-sm text-white/45">
+            No participants in this leaderboard yet.
+          </p>
+        ) : (
+          <ol>
+            {pageData.items.map((row) => {
               const isCurrentUser = row.user_id === currentUserId;
               return (
                 <li
@@ -158,16 +195,43 @@ export function LeaderboardLive({
                 </li>
               );
             })}
-                  </ol>
-                )}
-              </div>
-            </section>
-          ))}
-        </div>
+          </ol>
+        )}
+      </div>
+      {pageData.pageCount > 1 && (
+        <nav
+          aria-label={`${gender ?? "Participant"} leaderboard pages`}
+          className="mt-3 flex items-center justify-between gap-3 px-1"
+        >
+          <p className="text-xs text-white/45">
+            Showing {pageData.startIndex + 1}–
+            {pageData.startIndex + pageData.items.length} of {rows.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={pageData.page === 1}
+              className="min-h-10 rounded-full border border-white/10 px-4 text-xs font-semibold text-white/70 transition hover:border-amber-200/30 hover:text-amber-100 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span className="min-w-16 text-center text-xs tabular-nums text-white/50">
+              {pageData.page} / {pageData.pageCount}
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                setPage((current) => Math.min(pageData.pageCount, current + 1))
+              }
+              disabled={pageData.page === pageData.pageCount}
+              className="min-h-10 rounded-full border border-white/10 px-4 text-xs font-semibold text-white/70 transition hover:border-amber-200/30 hover:text-amber-100 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </nav>
       )}
-      <p className="mt-4 text-center text-xs text-white/35">
-        Tied scores share the same rank within each gender leaderboard.
-      </p>
-    </>
+    </section>
   );
 }
