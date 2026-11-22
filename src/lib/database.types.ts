@@ -31,6 +31,7 @@ export type Database = {
           target_gender: "male" | "female" | "unisex";
           title: string;
           points: number;
+          points_per_chapter: number | null;
           starts_on: string | null;
           ends_on: string | null;
           once_per_week: boolean;
@@ -43,6 +44,7 @@ export type Database = {
           target_gender?: "male" | "female" | "unisex";
           title: string;
           points: number;
+          points_per_chapter?: number | null;
           starts_on?: string | null;
           ends_on?: string | null;
           once_per_week?: boolean;
@@ -75,6 +77,7 @@ export type Database = {
           competition_week_start: string;
           is_weekly_completion: boolean;
           points_awarded: number;
+          chapters_read: number | null;
           completed_at: string;
         },
         {
@@ -85,6 +88,7 @@ export type Database = {
           competition_week_start?: string;
           is_weekly_completion?: boolean;
           points_awarded: number;
+          chapters_read?: number | null;
           completed_at?: string;
         }
       >;
@@ -127,6 +131,10 @@ export type Database = {
           p_challenge_ids: string[];
           p_custom_points: number[];
         };
+        Returns: number;
+      };
+      admin_update_chapter_completion: {
+        Args: { p_completion_id: string; p_chapters_read: number };
         Returns: number;
       };
       leaderboard_for_day: {

@@ -12,12 +12,14 @@ import {
   calculateTotalPoints,
   getChallengeIdsCompletedInCompetitionWeek,
 } from "@/lib/points";
+import { calculateChapterPoints } from "@/lib/chapter-points";
 
 type Challenge = {
   id: string;
   tier: "novice" | "challenger" | "elite" | "bonus";
   title: string;
   points: number;
+  points_per_chapter: number | null;
   once_per_week: boolean;
 };
 
@@ -25,6 +27,7 @@ type Completion = {
   challenge_id: string;
   competition_day: string;
   points_awarded: number;
+  chapters_read: number | null;
 };
 
 type AvailableDay = {
@@ -62,13 +65,14 @@ export function ChallengeLog({
   );
   const [loggedCompletions, setLoggedCompletions] = useState(completions);
   const [selectedIds, setSelectedIds] = useState(() => new Set<string>());
+  const [chapterCounts, setChapterCounts] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const pendingRef = useRef(false);
   const [notice, setNotice] = useState("");
 
   const completionsKey = completions
-    .map(({ challenge_id, competition_day, points_awarded }) =>
-      `${challenge_id}:${competition_day}:${points_awarded}`,
+    .map(({ challenge_id, competition_day, points_awarded, chapters_read }) =>
+      `${challenge_id}:${competition_day}:${points_awarded}:${chapters_read ?? ""}`,
     )
     .join(",");
   useEffect(() => {
@@ -116,17 +120,37 @@ export function ChallengeLog({
     });
   }
 
-  async function handleSave() {
-    if (pendingRef.current || selectedIds.size === 0) return;
+  async function handleSave(chapterChallengeId?: string) {
+    if (pendingRef.current || (!chapterChallengeId && selectedIds.size === 0)) return;
     pendingRef.current = true;
     setIsSaving(true);
     setNotice("");
-    const selected = challenges.filter((challenge) => selectedIds.has(challenge.id));
+    const selected = chapterChallengeId
+      ? challenges.filter((challenge) => challenge.id === chapterChallengeId)
+      : challenges.filter((challenge) => selectedIds.has(challenge.id));
+    const chaptersRead = chapterChallengeId
+      ? Number(chapterCounts[chapterChallengeId] ?? "")
+      : undefined;
+    if (
+      chapterChallengeId &&
+      (chaptersRead === undefined ||
+        !Number.isSafeInteger(chaptersRead) ||
+        calculateChapterPoints(
+          chaptersRead,
+          selected[0]?.points_per_chapter ?? 0,
+        ) === null)
+    ) {
+      setNotice("Enter a positive whole number of chapters.");
+      pendingRef.current = false;
+      setIsSaving(false);
+      return;
+    }
 
     try {
       const result = await saveChallengeSelection(
         selected.map(({ id }) => id),
         selectedDay,
+        chaptersRead,
       );
       if (!result.ok) {
         setNotice(result.error ?? "Couldn’t save that challenge.");
@@ -137,10 +161,19 @@ export function ChallengeLog({
           ...selected.map((challenge) => ({
             challenge_id: challenge.id,
             competition_day: selectedDay,
-            points_awarded: challenge.points,
+            points_awarded: chapterChallengeId
+              ? calculateChapterPoints(
+                  chaptersRead ?? 0,
+                  challenge.points_per_chapter ?? 0,
+                ) ?? 0
+              : challenge.points,
+            chapters_read: chapterChallengeId ? chaptersRead ?? null : null,
           })),
         ]);
         setSelectedIds(new Set());
+        if (chapterChallengeId) {
+          setChapterCounts((current) => ({ ...current, [chapterChallengeId]: "" }));
+        }
         router.refresh();
       }
     } catch {
@@ -172,6 +205,7 @@ export function ChallengeLog({
               onClick={() => {
                 setSelectedDay(day.date);
                 setSelectedIds(new Set());
+                setChapterCounts({});
                 setNotice("");
               }}
               className={`min-h-10 rounded-full border px-4 text-sm font-semibold transition ${
@@ -264,6 +298,73 @@ export function ChallengeLog({
                   const weeklyCompleted = completedThisWeek.has(challenge.id);
                   const locked = completed || weeklyCompleted;
                   const selected = selectedIds.has(challenge.id);
+                  if (challenge.points_per_chapter !== null) {
+                    const enteredChapterPoints = calculateChapterPoints(
+                      Number(chapterCounts[challenge.id] ?? ""),
+                      challenge.points_per_chapter,
+                    );
+                    const completion = loggedCompletions.find(
+                      (entry) =>
+                        entry.challenge_id === challenge.id &&
+                        entry.competition_day === selectedDay,
+                    );
+                    return (
+                      <div
+                        key={challenge.id}
+                        className="flex min-h-[72px] flex-wrap items-center gap-3 rounded-xl border border-white/[0.07] bg-[#20231e] p-4"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm leading-5 text-white/90">{challenge.title}</p>
+                          {locked && completion ? (
+                            <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-200/65">
+                              Saved · {completion.chapters_read} chapters · {completion.points_awarded} points
+                            </p>
+                          ) : null}
+                        </div>
+                        {!locked && (
+                          <>
+                            <label className="flex items-center gap-2 text-xs text-white/55">
+                              Chapters
+                              <input
+                                type="number"
+                                min="1"
+                                step="1"
+                                value={chapterCounts[challenge.id] ?? ""}
+                                disabled={!activeDay || isSaving}
+                                onChange={(event) =>
+                                  setChapterCounts((current) => ({
+                                    ...current,
+                                    [challenge.id]: event.target.value,
+                                  }))
+                                }
+                                className="w-24 rounded-lg border border-white/10 bg-[#151813] px-3 py-2 text-sm text-white disabled:opacity-50"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              disabled={
+                                !activeDay ||
+                                isSaving ||
+                                enteredChapterPoints === null
+                              }
+                              onClick={() => void handleSave(challenge.id)}
+                              className="rounded-lg bg-amber-300 px-3 py-2 text-xs font-bold text-[#1d1b14] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {isSaving ? "Saving…" : "Save reading"}
+                            </button>
+                          </>
+                        )}
+                        {!locked && (
+                          <span className="w-full text-xs font-semibold text-amber-200/75">
+                            +{challenge.points_per_chapter} pts per chapter
+                            {enteredChapterPoints !== null
+                              ? ` · this entry: ${enteredChapterPoints} points`
+                              : ""}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  }
                   return (
                     <button
                       key={challenge.id}
@@ -322,7 +423,7 @@ export function ChallengeLog({
       </div>
       <p className="mt-8 border-t border-white/[0.08] pt-5 text-center text-xs leading-5 text-white/40">
         Selections stay editable until saved. Saved challenges lock for the selected day,
-        or for the competition week when marked weekly.
+        or for the competition week when marked weekly. Chapter entries can only be saved once per day.
       </p>
       <span className="sr-only">Competition day {selectedDay}</span>
     </div>

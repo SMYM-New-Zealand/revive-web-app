@@ -7,6 +7,7 @@ import {
   isAvailableOnDate,
   isTodayOrYesterday,
 } from "@/lib/dates";
+import { calculateChapterPoints } from "@/lib/chapter-points";
 import { requireParticipant } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
@@ -29,6 +30,7 @@ export type CompletionActionResult = {
 export async function saveChallengeSelection(
   challengeIds: string[],
   competitionDay: string,
+  chaptersRead?: number,
 ): Promise<CompletionActionResult> {
   const { supabase, user, config } = await requireParticipant();
   const today = dateInTimeZone(new Date(), config.timezone);
@@ -49,7 +51,7 @@ export async function saveChallengeSelection(
 
   const { data: challenges, error: challengeError } = await supabase
     .from("challenges")
-    .select("id, points, active, starts_on, ends_on, target_gender")
+    .select("id, points, points_per_chapter, active, starts_on, ends_on, target_gender, once_per_week")
     .in("id", uniqueChallengeIds);
 
   if (challengeError) {
@@ -90,6 +92,32 @@ export async function saveChallengeSelection(
       error: "One or more selected challenges aren’t available for your participant profile.",
     };
   }
+  const chapterChallenge = challenges.find(
+    (challenge) => challenge.points_per_chapter !== null,
+  );
+  const chapterPoints =
+    chapterChallenge &&
+    chapterChallenge.points_per_chapter !== null &&
+    challenges.length === 1 &&
+    chaptersRead !== undefined
+      ? calculateChapterPoints(chaptersRead, chapterChallenge.points_per_chapter)
+      : null;
+  if (
+    (chapterChallenge &&
+      (challenges.length !== 1 || chapterPoints === null)) ||
+    (!chapterChallenge && chaptersRead !== undefined)
+  ) {
+    return {
+      ok: false,
+      error: "Enter a valid chapter count for this challenge.",
+    };
+  }
+  if (chapterChallenge && chapterChallenge.once_per_week) {
+    return {
+      ok: false,
+      error: "Chapter-count challenges must be available for a daily entry.",
+    };
+  }
 
   const { error } = await supabase.from("completions").insert(
     challenges.map((challenge) => ({
@@ -97,6 +125,7 @@ export async function saveChallengeSelection(
       challenge_id: challenge.id,
       competition_day: competitionDay,
       points_awarded: challenge.points,
+      chapters_read: chapterChallenge ? chaptersRead ?? null : null,
     })),
   );
 
@@ -115,6 +144,12 @@ export async function saveChallengeSelection(
         error: "These challenges can’t be saved for that date. Refresh and try again.",
       };
     }
+    if (error.code === "22003") {
+      return {
+        ok: false,
+        error: "That chapter count is too large to calculate points.",
+      };
+    }
     console.error("Challenge selection save failed:", error.message);
     return { ok: false, error: "Couldn’t save your selection. Please try again." };
   }
@@ -130,9 +165,12 @@ export type AdminActionState = {
 };
 
 export type ParticipantDayCompletion = {
+  id: string;
   challengeId: string;
   title: string;
   points: number;
+  chaptersRead: number | null;
+  pointsPerChapter: number | null;
 };
 
 export type ParticipantDayCompletionsResult =
@@ -155,7 +193,7 @@ export async function loadParticipantDayCompletions(
 
   const { data: completions, error: completionError } = await supabase
     .from("completions")
-    .select("challenge_id, points_awarded")
+    .select("id, challenge_id, points_awarded, chapters_read")
     .eq("user_id", participantId)
     .eq("competition_day", competitionDay);
   if (completionError) {
@@ -168,22 +206,70 @@ export async function loadParticipantDayCompletions(
 
   const { data: challenges, error: challengeError } = await supabase
     .from("challenges")
-    .select("id, title")
+    .select("id, title, points_per_chapter")
     .in("id", challengeIds);
   if (challengeError) {
     console.error("Participant day challenge lookup failed:", challengeError.message);
     return { success: false, message: "Could not load challenge details for that day. Please try again." };
   }
 
-  const titles = new Map((challenges ?? []).map(({ id, title }) => [id, title]));
+  const challengeDetails = new Map<string, {
+    title: string;
+    pointsPerChapter: number | null;
+  }>(
+    (challenges ?? []).map(({ id, title, points_per_chapter }) => [
+      id,
+      { title, pointsPerChapter: points_per_chapter },
+    ] as const),
+  );
   return {
     success: true,
-    completions: (completions ?? []).map(({ challenge_id, points_awarded }) => ({
+    completions: (completions ?? []).map(({ id, challenge_id, points_awarded, chapters_read }) => ({
+      id,
       challengeId: challenge_id,
-      title: titles.get(challenge_id) ?? "Challenge",
+      title: challengeDetails.get(challenge_id)?.title ?? "Challenge",
       points: points_awarded,
+      chaptersRead: chapters_read,
+      pointsPerChapter: challengeDetails.get(challenge_id)?.pointsPerChapter ?? null,
     })),
   };
+}
+
+export async function updateChapterCompletion(
+  _previousState: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const { supabase } = await requireAdmin();
+  const completionId = String(formData.get("completion_id") ?? "");
+  const chaptersRead = Number(formData.get("chapters_read"));
+  if (
+    !completionId ||
+    !Number.isSafeInteger(chaptersRead) ||
+    chaptersRead <= 0 ||
+    chaptersRead > 2_147_483_647
+  ) {
+    return { message: "Enter a valid positive chapter count.", success: false };
+  }
+
+  const { error } = await supabase.rpc("admin_update_chapter_completion", {
+    p_completion_id: completionId,
+    p_chapters_read: chaptersRead,
+  });
+  if (error) {
+    if (error.code === "22003" || error.code === "22023" || error.code === "23514") {
+      return { message: "That chapter count could not be saved.", success: false };
+    }
+    if (error.code === "42501") {
+      return { message: "Only an admin can correct completion entries.", success: false };
+    }
+    console.error("Admin chapter completion correction failed:", error.message);
+    return { message: "Could not correct that completion. Please try again.", success: false };
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/log");
+  revalidatePath("/leaderboard");
+  return { message: "Chapter count corrected.", success: true };
 }
 
 export async function backfillCompletions(
@@ -313,6 +399,8 @@ export async function addChallenge(
   const targetGender = String(formData.get("target_gender") ?? "");
   const title = String(formData.get("title") ?? "").trim();
   const points = Number(formData.get("points"));
+  const rawPointsPerChapter = String(formData.get("points_per_chapter") ?? "").trim();
+  const pointsPerChapter = rawPointsPerChapter ? Number(rawPointsPerChapter) : null;
   const startsOn = String(formData.get("starts_on") ?? "") || null;
   const endsOn = String(formData.get("ends_on") ?? "") || null;
   const oncePerWeek = formData.get("once_per_week") === "on";
@@ -322,10 +410,15 @@ export async function addChallenge(
     !isChallengeGender(targetGender) ||
     !title ||
     !Number.isInteger(points) ||
-    points <= 0
+    points <= 0 ||
+    (pointsPerChapter !== null && oncePerWeek) ||
+    (pointsPerChapter !== null &&
+      (!Number.isSafeInteger(pointsPerChapter) ||
+        pointsPerChapter <= 0 ||
+        pointsPerChapter > 2_147_483_647))
   ) {
     return {
-      message: "Enter a tier, gender, title, and positive whole-number points.",
+      message: "Enter valid challenge points; chapter-count challenges must be daily.",
       success: false,
     };
   }
@@ -337,15 +430,55 @@ export async function addChallenge(
     return { message: "Enter valid availability dates in the right order.", success: false };
   }
 
-  const { error } = await supabase.from("challenges").insert({
+  const challenge = {
     tier,
     target_gender: targetGender,
     title,
     points,
+    points_per_chapter: pointsPerChapter,
     starts_on: startsOn,
     ends_on: endsOn,
     once_per_week: oncePerWeek,
-  });
+  };
+  const { data: existingChallenge, error: existingChallengeError } = await supabase
+    .from("challenges")
+    .select("id, active")
+    .eq("tier", tier)
+    .eq("title", title)
+    .eq("target_gender", targetGender)
+    .maybeSingle();
+  if (existingChallengeError) {
+    console.error("Admin challenge lookup failed:", existingChallengeError.message);
+    return { message: "Could not add that challenge. Please try again.", success: false };
+  }
+  if (existingChallenge) {
+    if (existingChallenge.active) {
+      return {
+        message: "A challenge with that title already exists in this tier for that gender.",
+        success: false,
+      };
+    }
+
+    const { data: reactivatedChallenge, error } = await supabase
+      .from("challenges")
+      .update({ ...challenge, active: true })
+      .eq("id", existingChallenge.id)
+      .select("id")
+      .maybeSingle();
+    if (error) {
+      console.error("Admin challenge reactivation failed:", error.message);
+      return { message: "Could not reactivate that challenge. Please try again.", success: false };
+    }
+    if (!reactivatedChallenge) {
+      return { message: "That challenge could not be found.", success: false };
+    }
+
+    revalidatePath("/admin");
+    revalidatePath("/log");
+    return { message: "Challenge reactivated.", success: true };
+  }
+
+  const { error } = await supabase.from("challenges").insert(challenge);
   if (error) {
     if (error.code === "23505") {
       return {
@@ -365,6 +498,81 @@ function isChallengeGender(
   gender: string,
 ): gender is "male" | "female" | "unisex" {
   return gender === "male" || gender === "female" || gender === "unisex";
+}
+
+export async function updateChallenge(
+  _previousState: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const { supabase } = await requireAdmin();
+  const id = String(formData.get("challenge_id") ?? "");
+  const tier = String(formData.get("tier") ?? "");
+  const targetGender = String(formData.get("target_gender") ?? "");
+  const title = String(formData.get("title") ?? "").trim();
+  const points = Number(formData.get("points"));
+  const rawPointsPerChapter = String(formData.get("points_per_chapter") ?? "").trim();
+  const pointsPerChapter = rawPointsPerChapter ? Number(rawPointsPerChapter) : null;
+  const startsOn = String(formData.get("starts_on") ?? "") || null;
+  const endsOn = String(formData.get("ends_on") ?? "") || null;
+  const oncePerWeek = formData.get("once_per_week") === "on";
+
+  if (
+    !id ||
+    !isChallengeTier(tier) ||
+    !isChallengeGender(targetGender) ||
+    !title ||
+    !Number.isInteger(points) ||
+    points <= 0 ||
+    (pointsPerChapter !== null && oncePerWeek) ||
+    (pointsPerChapter !== null &&
+      (!Number.isSafeInteger(pointsPerChapter) ||
+        pointsPerChapter <= 0 ||
+        pointsPerChapter > 2_147_483_647))
+  ) {
+    return {
+      message: "Enter valid challenge points; chapter-count challenges must be daily.",
+      success: false,
+    };
+  }
+  if (
+    (startsOn && !isDate(startsOn)) ||
+    (endsOn && !isDate(endsOn)) ||
+    (startsOn && endsOn && startsOn > endsOn)
+  ) {
+    return { message: "Enter valid availability dates in the right order.", success: false };
+  }
+
+  const { data, error } = await supabase
+    .from("challenges")
+    .update({
+      tier,
+      target_gender: targetGender,
+      title,
+      points,
+      points_per_chapter: pointsPerChapter,
+      starts_on: startsOn,
+      ends_on: endsOn,
+      once_per_week: oncePerWeek,
+    })
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    if (error.code === "23505") {
+      return {
+        message: "A challenge with that title already exists in this tier for that gender.",
+        success: false,
+      };
+    }
+    console.error("Admin challenge update failed:", error.message);
+    return { message: "Could not update that challenge. Please try again.", success: false };
+  }
+  if (!data) return { message: "That challenge could not be found.", success: false };
+
+  revalidatePath("/admin");
+  revalidatePath("/log");
+  revalidatePath("/leaderboard");
+  return { message: "Challenge updated.", success: true };
 }
 
 export async function setChallengeActive(

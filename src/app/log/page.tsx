@@ -21,7 +21,7 @@ export default async function LogPage() {
       supabase.from("challenges").select("*").eq("active", true).order("sort_order"),
       supabase
         .from("completions")
-        .select("challenge_id, competition_day, points_awarded")
+        .select("challenge_id, competition_day, points_awarded, chapters_read")
         .eq("user_id", user.id),
       supabase.rpc("current_user_gender", {}),
     ]);
