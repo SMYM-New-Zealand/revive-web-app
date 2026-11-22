@@ -100,6 +100,10 @@ once per competition day, and follow a live leaderboard.
    through the Admin page after signing in as the initial administrator. To grant
    admin access to existing participants, select one or more participant entries
    in the allowlist and save; existing admins are not editable there.
+   To add a chapter-reading challenge, create or edit a challenge and set
+   **Points per chapter** to `5`. Participants enter a positive whole-number
+   chapter count, and the app awards five points per chapter. Each participant
+   can submit that challenge only once per competition day.
 
 ## Tests and deployment
 
@@ -126,6 +130,10 @@ JavaScript origins. Apply any new migrations with `supabase db push --remote`.
   being recorded twice for one user on one competition day, including concurrent
   requests. Challenges marked “once per week” are limited to one completion in
   each seven-day period starting from the competition start date.
+- Chapter-based challenges award their configured points-per-chapter rate from
+  the submitted positive whole-number chapter count. The database validates the
+  count and calculates the points; its daily uniqueness constraint also prevents
+  repeat submissions, including concurrent requests.
 - Admins can add past-day completions for a selected participant. A backfill is
   atomic: if any selected challenge violates its daily or weekly completion
   limit, none of the selected completions are added.

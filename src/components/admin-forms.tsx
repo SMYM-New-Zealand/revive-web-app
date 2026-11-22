@@ -1,7 +1,15 @@
 "use client";
 
-import { useActionState, useEffect, useState, useTransition } from "react";
+import {
+  useActionState,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
+import { calculateChapterPoints } from "@/lib/chapter-points";
 import {
   addAllowedEmail,
   addChallenge,
@@ -10,6 +18,8 @@ import {
   promoteAllowedEmails,
   setChallengeActive,
   setChallengeWeeklyLimit,
+  updateChapterCompletion,
+  updateChallenge,
   updateCompetition,
   type AdminActionState,
   type ParticipantDayCompletion,
@@ -23,6 +33,7 @@ type Challenge = {
   target_gender: "male" | "female" | "unisex";
   title: string;
   points: number;
+  points_per_chapter: number | null;
   active: boolean;
   once_per_week: boolean;
   starts_on: string | null;
@@ -103,7 +114,7 @@ export function AdminForms({
       </section>
 
       <section className="rounded-2xl border border-white/[0.09] bg-[#1d211c] p-5 sm:p-6">
-        <SectionHeading title="Add a challenge" description="Dates are optional; leave blank to keep a challenge available throughout the competition." />
+        <SectionHeading title="Add a challenge" description="Dates are optional; leave blank to keep a challenge available throughout the competition. Set points per chapter to let participants enter a daily chapter count and earn that rate for each chapter. Adding a deactivated challenge reactivates it." />
         <form action={challengeAction} className="mt-5 grid gap-4 sm:grid-cols-2">
           <label className="text-xs font-semibold text-white/55">
             Tier
@@ -120,7 +131,7 @@ export function AdminForms({
             </select>
           </label>
           <label className="text-xs font-semibold text-white/55">
-            Points
+            Fixed points
             <input
               required
               type="number"
@@ -129,6 +140,17 @@ export function AdminForms({
               step="1"
               defaultValue="10"
               className="mt-2 w-full rounded-xl border border-white/10 bg-[#151813] px-3 py-3 text-sm text-white"
+            />
+          </label>
+          <label className="text-xs font-semibold text-white/55">
+            Points per chapter (optional)
+            <input
+              type="number"
+              name="points_per_chapter"
+              min="1"
+              step="1"
+              placeholder="Leave blank for fixed points"
+              className="mt-2 w-full rounded-xl border border-white/10 bg-[#151813] px-3 py-3 text-sm text-white placeholder:text-white/25"
             />
           </label>
           <label className="text-xs font-semibold text-white/55">
@@ -388,14 +410,23 @@ function AllowedEmailPromotionForm({
 function ChallengeRow({ challenge }: { challenge: Challenge }) {
   const router = useRouter();
   const [state, action, pending] = useActionState(setChallengeActive, emptyAdminState);
+  const [editState, editAction, savingEdit] = useActionState(updateChallenge, emptyAdminState);
   const [weeklyState, weeklyAction, updatingWeekly] = useActionState(
     setChallengeWeeklyLimit,
     emptyAdminState,
   );
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     if (state.success) router.refresh();
   }, [router, state]);
+
+  useEffect(() => {
+    if (editState.success) {
+      setEditing(false);
+      router.refresh();
+    }
+  }, [editState, router]);
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
@@ -404,11 +435,20 @@ function ChallengeRow({ challenge }: { challenge: Challenge }) {
           {challenge.title}
         </p>
         <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-amber-200/60">
-          {challenge.tier} · {challenge.points} points · {challenge.target_gender}
+          {challenge.tier} · {challenge.points_per_chapter === null
+            ? `${challenge.points} points`
+            : `${challenge.points_per_chapter} points per chapter`} · {challenge.target_gender}
           {" · "}{challenge.active ? "active" : "inactive"}
         </p>
       </div>
-      {challenge.active && (
+      <button
+        type="button"
+        onClick={() => setEditing((current) => !current)}
+        className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-white/55 hover:border-white/20 hover:text-white/80"
+      >
+        {editing ? "Cancel edit" : "Edit"}
+      </button>
+      {challenge.active && challenge.points_per_chapter === null && (
         <form action={weeklyAction} className="flex items-center gap-2">
           <input type="hidden" name="challenge_id" value={challenge.id} />
           <label className="flex cursor-pointer items-center gap-2 text-[10px] font-semibold text-white/55">
@@ -451,6 +491,117 @@ function ChallengeRow({ challenge }: { challenge: Challenge }) {
           {weeklyState.message}
         </span>
       )}
+      {editing && (
+        <form action={editAction} className="grid w-full gap-3 rounded-xl border border-white/[0.07] bg-black/10 p-4 sm:grid-cols-2">
+          <input type="hidden" name="challenge_id" value={challenge.id} />
+          <label className="text-xs font-semibold text-white/55">
+            Tier
+            <select
+              name="tier"
+              required
+              defaultValue={challenge.tier}
+              disabled={savingEdit}
+              className="mt-2 w-full rounded-xl border border-white/10 bg-[#151813] px-3 py-3 text-sm text-white"
+            >
+              <option value="novice">Novice</option>
+              <option value="challenger">Challenger</option>
+              <option value="elite">Elite</option>
+              <option value="bonus">Bonus</option>
+            </select>
+          </label>
+          <label className="text-xs font-semibold text-white/55">
+            Target gender
+            <select
+              name="target_gender"
+              required
+              defaultValue={challenge.target_gender}
+              disabled={savingEdit}
+              className="mt-2 w-full rounded-xl border border-white/10 bg-[#151813] px-3 py-3 text-sm text-white"
+            >
+              <option value="male">Male participants</option>
+              <option value="female">Female participants</option>
+              <option value="unisex">Everyone (unisex)</option>
+            </select>
+          </label>
+          <label className="text-xs font-semibold text-white/55 sm:col-span-2">
+            Title
+            <input
+              required
+              maxLength={180}
+              name="title"
+              defaultValue={challenge.title}
+              disabled={savingEdit}
+              className="mt-2 w-full rounded-xl border border-white/10 bg-[#151813] px-3 py-3 text-sm text-white"
+            />
+          </label>
+          <label className="text-xs font-semibold text-white/55">
+            Fixed points
+            <input
+              required
+              type="number"
+              name="points"
+              min="1"
+              step="1"
+              defaultValue={challenge.points}
+              disabled={savingEdit}
+              className="mt-2 w-full rounded-xl border border-white/10 bg-[#151813] px-3 py-3 text-sm text-white"
+            />
+          </label>
+          <label className="text-xs font-semibold text-white/55">
+            Points per chapter (optional)
+            <input
+              type="number"
+              name="points_per_chapter"
+              min="1"
+              step="1"
+              defaultValue={challenge.points_per_chapter ?? ""}
+              disabled={savingEdit}
+              placeholder="Leave blank for fixed points"
+              className="mt-2 w-full rounded-xl border border-white/10 bg-[#151813] px-3 py-3 text-sm text-white placeholder:text-white/25"
+            />
+          </label>
+          <label className="flex items-center gap-2 self-end pb-3 text-sm text-white/70">
+            <input
+              type="checkbox"
+              name="once_per_week"
+              defaultChecked={challenge.once_per_week}
+              disabled={savingEdit}
+              className="size-4 accent-amber-300"
+            />
+            Once per competition week
+          </label>
+          <label className="text-xs font-semibold text-white/55">
+            Available from
+            <input
+              type="date"
+              name="starts_on"
+              defaultValue={challenge.starts_on ?? ""}
+              disabled={savingEdit}
+              className="mt-2 w-full rounded-xl border border-white/10 bg-[#151813] px-3 py-3 text-sm text-white"
+            />
+          </label>
+          <label className="text-xs font-semibold text-white/55">
+            Available through
+            <input
+              type="date"
+              name="ends_on"
+              defaultValue={challenge.ends_on ?? ""}
+              disabled={savingEdit}
+              className="mt-2 w-full rounded-xl border border-white/10 bg-[#151813] px-3 py-3 text-sm text-white"
+            />
+          </label>
+          <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+            <button
+              type="submit"
+              disabled={savingEdit}
+              className="rounded-full bg-amber-300 px-4 py-2 text-xs font-bold text-[#171a14] disabled:opacity-50"
+            >
+              {savingEdit ? "Saving…" : "Save changes"}
+            </button>
+            <ActionMessage state={editState} />
+          </div>
+        </form>
+      )}
     </div>
   );
 }
@@ -479,6 +630,7 @@ function LateCompletionForm({
   const availableChallenges = challenges.filter(
     (challenge) =>
       challenge.active &&
+      challenge.points_per_chapter === null &&
       selectedParticipant &&
       (challenge.target_gender === "unisex" ||
         challenge.target_gender === selectedParticipant.gender) &&
@@ -491,7 +643,7 @@ function LateCompletionForm({
     <section className="rounded-2xl border border-white/[0.09] bg-[#1d211c] p-5 sm:p-6">
       <SectionHeading
         title="Add a late completion"
-        description="Record one or more challenges for a participant and a past competition day. For Historical Points, enter a custom total if needed; leave it blank to use the default. If any selection conflicts with an existing completion, none of the entries will be added."
+        description="Record one or more fixed-point challenges for a participant and a past competition day. For Historical Points, enter a custom total if needed; leave it blank to use the default. If any selection conflicts with an existing completion, none of the entries will be added. Per-chapter entries should be corrected in Participant day completions."
       />
       <form action={action} className="mt-5 grid gap-4 sm:grid-cols-2">
         <label className="text-xs font-semibold text-white/55">
@@ -627,6 +779,18 @@ function ParticipantDayCompletions({
   }
 
   const totalPoints = completions?.reduce((total, completion) => total + completion.points, 0) ?? 0;
+  const handleChapterCorrection = useCallback(
+    (completionId: string, chaptersRead: number, points: number) => {
+      setCompletions((current) =>
+        current?.map((completion) =>
+          completion.id === completionId
+            ? { ...completion, chaptersRead, points }
+            : completion,
+        ) ?? null,
+      );
+    },
+    [],
+  );
 
   return (
     <section className="rounded-2xl border border-white/[0.09] bg-[#1d211c] p-5 sm:p-6">
@@ -688,13 +852,20 @@ function ParticipantDayCompletions({
           <div className="max-h-64 divide-y divide-white/[0.07] overflow-y-auto rounded-xl border border-white/[0.07]">
             {completions.map((completion) => (
               <div
-                key={completion.challengeId}
+                key={completion.id}
                 className="flex items-center justify-between gap-4 px-4 py-3"
               >
                 <p className="min-w-0 text-sm text-white/75">{completion.title}</p>
-                <span className="shrink-0 text-xs font-semibold text-amber-200/70">
-                  {completion.points} pts
-                </span>
+                {completion.pointsPerChapter !== null ? (
+                  <ChapterCompletionCorrection
+                    completion={completion}
+                    onCorrected={handleChapterCorrection}
+                  />
+                ) : (
+                  <span className="shrink-0 text-xs font-semibold text-amber-200/70">
+                    {completion.points} pts
+                  </span>
+                )}
               </div>
             ))}
             {completions.length === 0 && (
@@ -706,6 +877,81 @@ function ParticipantDayCompletions({
         </div>
       )}
     </section>
+  );
+}
+
+function ChapterCompletionCorrection({
+  completion,
+  onCorrected,
+}: {
+  completion: ParticipantDayCompletion;
+  onCorrected: (completionId: string, chaptersRead: number, points: number) => void;
+}) {
+  const router = useRouter();
+  const [chaptersRead, setChaptersRead] = useState(completion.chaptersRead ?? 0);
+  const correctionHandled = useRef(false);
+  const [state, action, pending] = useActionState(
+    updateChapterCompletion,
+    emptyAdminState,
+  );
+
+  useEffect(() => {
+    if (!state.success || correctionHandled.current) return;
+    correctionHandled.current = true;
+    const points = calculateChapterPoints(
+      chaptersRead,
+      completion.pointsPerChapter ?? 0,
+    );
+    if (points !== null) {
+      onCorrected(completion.id, chaptersRead, points);
+      router.refresh();
+    }
+  }, [chaptersRead, completion, onCorrected, router, state]);
+
+  return (
+    <form
+      action={action}
+      onSubmit={() => {
+        correctionHandled.current = false;
+      }}
+      className="flex flex-wrap items-center justify-end gap-2"
+    >
+      <input type="hidden" name="completion_id" value={completion.id} />
+      <label className="flex items-center gap-2 text-xs text-white/55">
+        Chapters
+        <input
+          required
+          type="number"
+          name="chapters_read"
+          min="1"
+          step="1"
+          value={chaptersRead || ""}
+          onChange={(event) => setChaptersRead(Number(event.target.value))}
+          disabled={pending}
+          className="w-20 rounded-lg border border-white/10 bg-[#151813] px-2 py-2 text-sm text-white"
+        />
+      </label>
+      <span className="text-xs font-semibold text-amber-200/70">
+        {completion.points} pts
+      </span>
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-white/65 disabled:opacity-50"
+      >
+        {pending ? "Saving…" : "Correct"}
+      </button>
+      {state.message && (
+        <span
+          role={state.success ? "status" : "alert"}
+          className={`basis-full text-right text-xs ${
+            state.success ? "text-emerald-200/70" : "text-rose-200/80"
+          }`}
+        >
+          {state.message}
+        </span>
+      )}
+    </form>
   );
 }
 
